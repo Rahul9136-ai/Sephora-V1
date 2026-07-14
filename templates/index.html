@@ -85,6 +85,12 @@
   button.del{background:transparent;border:1px solid var(--line);color:var(--muted);
     border-radius:6px;cursor:pointer;padding:2px 8px}
   button.del:hover{color:var(--c5);border-color:var(--c5)}
+  .uprow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .uprow input[type=file]{color:var(--muted);font-size:12px;max-width:100%}
+  .upmsg{font-size:12px;color:var(--good)}
+  .srctag{display:inline-block;margin-top:8px;margin-right:10px;font-size:11px;
+    color:var(--muted);background:var(--panel2);border:1px solid var(--line);
+    border-radius:20px;padding:3px 10px}
   .xscroll{overflow-x:auto}
   table.matrix{font-size:12px;min-width:760px}
   table.matrix td,table.matrix th{padding:7px 9px}
@@ -360,7 +366,35 @@ async function showData(){
   main.appendChild(tabbar('data'));
   main.appendChild(el('h2',{},'Add data & retrain'));
   main.appendChild(el('div',{class:'sub'},
-    `New actuals, orders and events feed the model. Retrain rebuilds on the full dataset and produces a ${DATA.horizon_days}-day (3-month) rolling forecast from the last data point.`));
+    `Upload a file or add rows below. Retrain rebuilds on the full dataset and produces a ${DATA.horizon_days}-day (3-month) rolling forecast from the last data point.`));
+
+  // --- Import file (upload) ---
+  const up=el('div',{class:'panel'});
+  up.appendChild(el('h3',{},'Import file (Excel / CSV)'));
+  up.appendChild(el('div',{class:'hint'},'Auto-detected: a raw Gladly export (like Ss.xlsx) becomes the forecast source; a file with start,end,name[,impact_pct] merges into the event calendar; date,orders → orders; date,segment,contacts → actuals.'));
+  const file=inp('file','',{accept:'.xlsx,.xls,.xlsm,.csv,.txt'});
+  const upBtn=el('button',{class:'primary'},'Upload & import');
+  const upMsg=el('span',{class:'upmsg'});
+  const srcTag=el('span',{class:'srctag'}, info.custom_source?'source: uploaded file':'source: Ss.xlsx (default)');
+  const row=el('div',{class:'uprow'},[file,upBtn,upMsg]);
+  up.append(row, srcTag);
+  if(info.custom_source){
+    const rst=el('button',{class:'del'},'reset to default source');
+    rst.onclick=async()=>{try{await post('/api/source/reset',{});toast('Reverted to Ss.xlsx');showData();}catch(e){toast('Error',true);}};
+    up.appendChild(rst);
+  }
+  upBtn.onclick=async()=>{
+    if(!file.files[0]){toast('Choose a file first',true);return;}
+    upBtn.disabled=true;upMsg.textContent='Uploading…';
+    try{const fd=new FormData();fd.append('file',file.files[0]);
+      const r=await fetch('/api/upload',{method:'POST',body:fd});
+      const j=await r.json();if(!r.ok||j.ok===false)throw new Error(j.error||'failed');
+      upMsg.textContent='✓ '+j.message; toast(j.message);
+      setTimeout(showData,1200);
+    }catch(e){upMsg.textContent='';toast('Error: '+e.message,true);}
+    upBtn.disabled=false;
+  };
+  main.appendChild(up);
 
   const segCodes=Object.keys(DATA.segments);
   const grid=el('div',{class:'formgrid'});

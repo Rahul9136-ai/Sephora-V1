@@ -138,9 +138,24 @@ A "Retrain now" button reruns the whole pipeline on demand.
 ## Add new data → retrain → 3-month rolling forecast
 
 The **Data & Retrain** UI tab (or the `data/` CSVs directly) lets you extend the
-model with three kinds of input; **Retrain** rebuilds on the full dataset and
-produces a **90-day (3-month) rolling forecast** starting the day after the last
-actual — so as you keep adding data, the forecast window rolls forward.
+model with new input; **Retrain** rebuilds on the full dataset and produces a
+**90-day (3-month) rolling forecast** starting the day after the last actual — so
+as you keep adding data, the forecast window rolls forward.
+
+### Import a file (Excel / CSV)
+
+The **Import file** control uploads an `.xlsx`/`.csv` and auto-detects it:
+
+- a **raw Gladly export** (an `.xlsx` with the `Voice Export (Gladly)` /
+  `Email_Chat Export (Gladly)` sheets, like `Ss.xlsx`) → becomes the forecast
+  **source** (`data/source.xlsx`), used on the next Retrain (revertible);
+- a file with **`start,end,name[,impact_pct]`** → merged into the event calendar;
+- **`date,orders`** → orders; **`date,segment,contacts`** → actuals.
+
+`POST /api/upload` (multipart) does the same from code; `POST /api/source/reset`
+reverts to the default `Ss.xlsx`.
+
+Or add individual rows / a smaller amount of data through the three forms below.
 
 | Input | File | Effect |
 |-------|------|--------|

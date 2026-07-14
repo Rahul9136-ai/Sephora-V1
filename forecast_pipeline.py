@@ -41,6 +41,15 @@ DATA_DIR = os.path.join(HERE, "data")           # user-added actuals/orders/even
 ACTUALS_CSV = os.path.join(DATA_DIR, "actuals.csv")   # date,segment,contacts
 ORDERS_CSV = os.path.join(DATA_DIR, "orders.csv")     # date,orders
 EVENTS_CSV = os.path.join(DATA_DIR, "events.csv")     # start,end,name,impact_pct
+SOURCE_XLSX = os.path.join(DATA_DIR, "source.xlsx")   # uploaded raw Gladly export
+
+
+def resolve_source(requested: str) -> str:
+    """Prefer an uploaded raw export (data/source.xlsx) over the default path,
+    unless a specific --xlsx was passed."""
+    if requested == DEFAULT_XLSX and os.path.exists(SOURCE_XLSX):
+        return SOURCE_XLSX
+    return requested
 
 # ---- forecasting config -------------------------------------------------
 TEST_DAYS = 28          # holdout length for accuracy evaluation
@@ -685,6 +694,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    if not os.path.exists(args.xlsx):
-        sys.exit(f"ERROR: data file not found: {args.xlsx}")
-    run(args.xlsx, args.horizon, make_plot=not args.no_plot)
+    xlsx = resolve_source(args.xlsx)
+    if not os.path.exists(xlsx):
+        sys.exit(f"ERROR: data file not found: {xlsx}")
+    print(f"[0/5] Source: {xlsx}")
+    run(xlsx, args.horizon, make_plot=not args.no_plot)

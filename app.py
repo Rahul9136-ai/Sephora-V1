@@ -23,9 +23,12 @@ DATA_DIR = os.path.join(HERE, "data")
 ACTUALS_CSV = os.path.join(DATA_DIR, "actuals.csv")
 ORDERS_CSV = os.path.join(DATA_DIR, "orders.csv")
 EVENTS_CSV = os.path.join(DATA_DIR, "events.csv")
+SOURCE_XLSX = os.path.join(DATA_DIR, "source.xlsx")
+RAW_SHEETS = {"Voice Export (Gladly)", "Email_Chat Export (Gladly)"}
 
 app = Flask(__name__, template_folder=os.path.join(HERE, "templates"))
 app.json.sort_keys = False        # preserve insertion order (total first, by volume)
+app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024   # allow large raw exports
 
 
 def _load(name):
@@ -73,7 +76,8 @@ def api_data():
             events = list(csv.DictReader(f))
     return jsonify({"events": events,
                     "actuals_rows": _count(ACTUALS_CSV),
-                    "orders_rows": _count(ORDERS_CSV)})
+                    "orders_rows": _count(ORDERS_CSV),
+                    "custom_source": os.path.exists(SOURCE_XLSX)})
 
 
 @app.route("/api/actual", methods=["POST"])
@@ -125,6 +129,111 @@ def api_event_delete():
         w.writeheader()
         w.writerows(kept)
     return jsonify({"ok": True, "removed": len(rows) - len(kept)})
+
+
+def _import_events(df):
+    """Append rows from a DataFrame that has start/end/name(/impact_pct)."""
+    cols = {c.lower().strip(): c for c in df.columns}
+    need = ("start", "end", "name")
+    if not all(k in cols for k in need):
+        return None
+    n = 0
+    for _, r in df.iterrows():
+        try:
+            imp = r[cols["impact_pct"]] if "impact_pct" in cols else 0
+            _append_row(EVENTS_CSV, ["start", "end", "name", "impact_pct"],
+                        [str(r[cols["start"]])[:10], str(r[cols["end"]])[:10],
+                         str(r[cols["name"]]).strip(), float(imp or 0)])
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
+def _import_tabular(df):
+    """Route a generic table to orders / actuals by its columns."""
+    cols = {c.lower().strip(): c for c in df.columns}
+    if "date" in cols and "orders" in cols:
+        n = 0
+        for _, r in df.iterrows():
+            try:
+                _append_row(ORDERS_CSV, ["date", "orders"],
+                            [str(r[cols["date"]])[:10], float(r[cols["orders"]])]); n += 1
+            except Exception:
+                continue
+        return ("orders", n)
+    if "date" in cols and "segment" in cols and "contacts" in cols:
+        n = 0
+        for _, r in df.iterrows():
+            try:
+                _append_row(ACTUALS_CSV, ["date", "segment", "contacts"],
+                            [str(r[cols["date"]])[:10], str(r[cols["segment"]]).strip(),
+                             float(r[cols["contacts"]])]); n += 1
+            except Exception:
+                continue
+        return ("actuals", n)
+    return (None, 0)
+
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """Import an uploaded file, auto-detecting its kind:
+      * raw Gladly export (xlsx with the Voice/Email-Chat sheets) -> becomes the
+        pipeline source (data/source.xlsx)
+      * events file (start,end,name[,impact_pct]) -> merged into the calendar
+      * orders (date,orders) / actuals (date,segment,contacts) -> appended
+    Does not retrain automatically — the user clicks Retrain afterwards.
+    """
+    import pandas as pd
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no file"}), 400
+    os.makedirs(DATA_DIR, exist_ok=True)
+    name = f.filename
+    lower = name.lower()
+    try:
+        if lower.endswith((".xlsx", ".xls", ".xlsm")):
+            tmp = os.path.join(DATA_DIR, "_upload.xlsx")
+            f.save(tmp)
+            xl = pd.ExcelFile(tmp)
+            sheets = list(xl.sheet_names)
+            if RAW_SHEETS & set(sheets):                # raw Gladly export
+                xl.close()                              # release the handle first
+                os.replace(tmp, SOURCE_XLSX)
+                return jsonify({"ok": True, "kind": "source",
+                                "message": f"'{name}' set as the forecast source "
+                                           f"({', '.join(s for s in sheets if s in RAW_SHEETS)}). "
+                                           "Click Retrain to rebuild on it."})
+            df = pd.read_excel(xl, sheets[0])
+            xl.close()
+            os.remove(tmp)
+        elif lower.endswith((".csv", ".txt")):
+            df = pd.read_csv(f)
+        else:
+            return jsonify({"ok": False, "error": "unsupported file type"}), 400
+
+        ev = _import_events(df)
+        if ev is not None:
+            return jsonify({"ok": True, "kind": "events",
+                            "message": f"Imported {ev} event(s) from '{name}'."})
+        kind, n = _import_tabular(df)
+        if kind:
+            return jsonify({"ok": True, "kind": kind,
+                            "message": f"Imported {n} {kind} row(s) from '{name}'. Click Retrain."})
+        return jsonify({"ok": False, "error":
+                        "Could not detect columns. Expected a raw Gladly export, "
+                        "or columns [start,end,name], [date,orders], or "
+                        "[date,segment,contacts]. Got: " + ", ".join(map(str, df.columns[:8]))}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 400
+
+
+@app.route("/api/source/reset", methods=["POST"])
+def api_source_reset():
+    """Revert to the default Ss.xlsx source (remove the uploaded one)."""
+    if os.path.exists(SOURCE_XLSX):
+        os.remove(SOURCE_XLSX)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/retrain", methods=["POST"])
