@@ -61,6 +61,23 @@
   .tick{fill:var(--muted);font-size:10px}
   .badge{background:var(--panel2);border:1px solid var(--line);border-radius:20px;
     padding:2px 10px;font-size:11px;color:var(--good)}
+  .badge.alt{color:var(--muted);margin-left:6px}
+  .tabbar{display:flex;gap:6px;margin-bottom:14px}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    padding:7px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:flex;align-items:center;gap:8px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:12px}
+  .chip b{background:var(--accent);color:#fff;border-radius:12px;padding:0 8px;font-size:11px}
+  .chip.zero{opacity:.45}.chip.zero b{background:var(--line);color:var(--muted)}
+  .xscroll{overflow-x:auto}
+  table.matrix{font-size:12px;min-width:760px}
+  table.matrix td,table.matrix th{padding:7px 9px}
+  table.matrix td.cellbest{font-weight:700;color:var(--good)}
+  table.matrix .muted{color:var(--muted)}
+  table.matrix tr.totrow td:first-child{color:var(--accent);font-weight:700}
+  table.matrix tr:hover td{outline:1px solid var(--line)}
   .tip{position:fixed;pointer-events:none;background:#000;border:1px solid var(--line);
     border-radius:6px;padding:6px 9px;font-size:11px;opacity:0;transition:opacity .1s;z-index:9}
 </style>
@@ -79,7 +96,7 @@
 
 <script>
 const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
-let DATA=null, LABELS=null, CUR=null, HIDDEN={};
+let DATA=null, LABELS=null, CUR=null, HIDDEN={}, VIEW='detail';
 
 function cvar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 const el=(t,a={},kids=[])=>{const e=document.createElement(t);
@@ -106,15 +123,27 @@ function renderSegs(){
   }
 }
 
+function tabbar(active){
+  const bar=el('div',{class:'tabbar'});
+  const mk=(id,txt)=>{const b=el('button',{class:'tab'+(active===id?' on':'')},txt);
+    b.onclick=()=>id==='board'?showBoard():select(CUR||'total');return b;};
+  bar.appendChild(mk('detail','Segment detail'));
+  bar.appendChild(mk('board','Leaderboard'));
+  return bar;
+}
+
 function select(code){
-  CUR=code; HIDDEN={};
+  CUR=code; VIEW='detail'; HIDDEN={};
   document.querySelectorAll('.seg').forEach(x=>x.classList.toggle('active',x.dataset.code===code));
   const s=DATA.segments[code];
-  const best=s.best_model, bm=s.metrics[best]||{};
+  const best=s.test_winner, bm=s.metrics[best]||{};
   const main=document.getElementById('main'); main.innerHTML='';
+  main.appendChild(tabbar('detail'));
   main.appendChild(el('h2',{},code==='total'?'TOTAL (all segments)':code));
-  main.appendChild(el('div',{class:'sub'},`avg ${s.avg_daily_history}/day · best method: `,));
+  main.appendChild(el('div',{class:'sub'},`avg ${s.avg_daily_history}/day · best test method: `,));
   main.lastChild.appendChild(el('span',{class:'badge'},LABELS[best]));
+  if(s.forecast_model!==best)
+    main.lastChild.appendChild(el('span',{class:'badge alt'},'forecast uses: '+LABELS[s.forecast_model]));
 
   const cards=el('div',{class:'cards'});
   const mk=(k,v)=>el('div',{class:'card'},[el('div',{class:'k'},k),el('div',{class:'v',html:v})]);
@@ -238,6 +267,65 @@ function forecastChart(s){
   const fc=[[X(off-1),Y(h.values[off-1])]].concat(f.mean.map((v,j)=>[X(off+j),Y(v)]));
   polyline(svg,ns,fc,cvar('--accent'),2.4);
   return svg;
+}
+
+// ---------- Leaderboard ----------
+function showBoard(){
+  VIEW='board';
+  document.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));
+  const methods=Object.keys(LABELS);
+  const segs=Object.entries(DATA.segments);
+  const main=document.getElementById('main'); main.innerHTML='';
+  main.appendChild(tabbar('board'));
+  main.appendChild(el('h2',{},'Leaderboard — all 8 methods × every segment'));
+  main.appendChild(el('div',{class:'sub'},'Test-set WAPE % (lower is better). Best method per segment is highlighted; “–” = method could not fit that series.'));
+
+  // win tally (segments only, excl. total)
+  const wins={}; methods.forEach(m=>wins[m]=0);
+  segs.filter(([c])=>c!=='total').forEach(([,s])=>{wins[s.test_winner]=(wins[s.test_winner]||0)+1;});
+  const wp=el('div',{class:'panel'});
+  wp.appendChild(el('h3',{},'Wins per method (across 10 segments)'));
+  const chips=el('div',{class:'chips'});
+  Object.entries(wins).sort((a,b)=>b[1]-a[1]).forEach(([m,n],i)=>{
+    const c=cvar(MCOL[methods.indexOf(m)]);
+    chips.appendChild(el('div',{class:'chip'+(n?'':' zero')},[
+      el('span',{class:'dot',style:`background:${c}`}),
+      el('span',{},LABELS[m]),el('b',{},String(n))]));
+  });
+  wp.appendChild(chips); main.appendChild(wp);
+
+  // matrix
+  const mp=el('div',{class:'panel'});
+  mp.appendChild(el('h3',{},'WAPE % matrix'));
+  const scroll=el('div',{class:'xscroll'});
+  const t=el('table',{class:'matrix'});
+  const head=el('tr',{},[el('th',{},'Segment'),el('th',{},'avg/d'),
+    ...methods.map(m=>{const th=el('th',{},LABELS[m].replace(' (by weekday)','').replace(' (ETS)',''));
+      th.style.borderBottom='2px solid '+cvar(MCOL[methods.indexOf(m)]);return th;})]);
+  t.appendChild(head);
+  segs.forEach(([code,s])=>{
+    const vals=methods.map(m=>{const w=s.metrics[m]&&s.metrics[m]['WAPE_%'];
+      return (typeof w==='number')?w:null;});
+    const bestVal=Math.min(...vals.filter(v=>v!=null));
+    const tr=el('tr',code==='total'?{class:'totrow'}:{});
+    const name=el('td',{},code==='total'?'TOTAL':code);
+    name.style.cursor='pointer'; name.onclick=()=>select(code);
+    tr.appendChild(name);
+    tr.appendChild(el('td',{class:'muted'},String(Math.round(s.avg_daily_history))));
+    vals.forEach((v,i)=>{
+      const td=el('td',{},v==null?'–':v.toFixed(1));
+      if(v!=null && v===bestVal){td.classList.add('cellbest');}
+      if(v!=null){ // heat tint by relative badness within the row
+        const mx=Math.max(...vals.filter(x=>x!=null));
+        const t01=mx>bestVal?(v-bestVal)/(mx-bestVal):0;
+        td.style.background=`rgba(224,0,108,${(t01*0.22).toFixed(3)})`;
+        if(v===bestVal)td.style.background='rgba(37,194,129,.20)';
+      }else td.classList.add('muted');
+      tr.appendChild(td);
+    });
+    t.appendChild(tr);
+  });
+  scroll.appendChild(t); mp.appendChild(scroll); main.appendChild(mp);
 }
 
 document.getElementById('retrainBtn').onclick=async(e)=>{

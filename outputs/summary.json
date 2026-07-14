@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-14T17:56:16",
+  "generated_at": "2026-07-14T19:46:21",
   "source": "C:\\Users\\lenovo\\Desktop\\Ss.xlsx",
   "history_days": 309,
   "history_start": "2025-08-19",
@@ -20,9 +20,9 @@
       "avg_daily_history": 6695.1,
       "outliers_normalized": 6,
       "april_days_capped": 16,
-      "best_model": "sarimax",
-      "best_test_WAPE_%": 11.38,
-      "best_test_MAPE_%": 12.32,
+      "forecast_model": "sarimax",
+      "test_winner": "sarimax",
+      "test_winner_WAPE_%": 11.38,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 609.9,
@@ -79,9 +79,9 @@
       "avg_daily_history": 2875.4,
       "outliers_normalized": 10,
       "april_days_capped": 17,
-      "best_model": "snaive_drift",
-      "best_test_WAPE_%": 19.56,
-      "best_test_MAPE_%": 23.23,
+      "forecast_model": "snaive_drift",
+      "test_winner": "snaive_drift",
+      "test_winner_WAPE_%": 19.56,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 480.1,
@@ -138,9 +138,9 @@
       "avg_daily_history": 1916.8,
       "outliers_normalized": 6,
       "april_days_capped": 10,
-      "best_model": "sarimax",
-      "best_test_WAPE_%": 13.33,
-      "best_test_MAPE_%": 13.78,
+      "forecast_model": "sarimax",
+      "test_winner": "sarimax",
+      "test_winner_WAPE_%": 13.33,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 258.3,
@@ -197,9 +197,9 @@
       "avg_daily_history": 1057.0,
       "outliers_normalized": 17,
       "april_days_capped": 15,
-      "best_model": "moving_avg_dow",
-      "best_test_WAPE_%": 17.11,
-      "best_test_MAPE_%": 18.09,
+      "forecast_model": "moving_avg_dow",
+      "test_winner": "moving_avg_dow",
+      "test_winner_WAPE_%": 17.11,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 180.6,
@@ -256,9 +256,9 @@
       "avg_daily_history": 465.3,
       "outliers_normalized": 13,
       "april_days_capped": 15,
-      "best_model": "moving_avg_dow",
-      "best_test_WAPE_%": 16.81,
-      "best_test_MAPE_%": 17.58,
+      "forecast_model": "moving_avg_dow",
+      "test_winner": "moving_avg_dow",
+      "test_winner_WAPE_%": 16.81,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 77.5,
@@ -315,9 +315,9 @@
       "avg_daily_history": 225.8,
       "outliers_normalized": 22,
       "april_days_capped": 14,
-      "best_model": "holt_winters",
-      "best_test_WAPE_%": 16.55,
-      "best_test_MAPE_%": 19.45,
+      "forecast_model": "holt_winters",
+      "test_winner": "holt_winters",
+      "test_winner_WAPE_%": 16.55,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 111.0,
@@ -374,9 +374,9 @@
       "avg_daily_history": 92.4,
       "outliers_normalized": 6,
       "april_days_capped": 7,
-      "best_model": "theta",
-      "best_test_WAPE_%": 12.6,
-      "best_test_MAPE_%": 12.44,
+      "forecast_model": "theta",
+      "test_winner": "theta",
+      "test_winner_WAPE_%": 12.6,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 14.1,
@@ -433,9 +433,9 @@
       "avg_daily_history": 50.4,
       "outliers_normalized": 10,
       "april_days_capped": 13,
-      "best_model": "theta",
-      "best_test_WAPE_%": 15.8,
-      "best_test_MAPE_%": 19.46,
+      "forecast_model": "theta",
+      "test_winner": "theta",
+      "test_winner_WAPE_%": 15.8,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 10.2,
@@ -492,9 +492,9 @@
       "avg_daily_history": 8.9,
       "outliers_normalized": 6,
       "april_days_capped": 3,
-      "best_model": "moving_avg_dow",
-      "best_test_WAPE_%": 31.06,
-      "best_test_MAPE_%": 36.71,
+      "forecast_model": "moving_avg_dow",
+      "test_winner": "moving_avg_dow",
+      "test_winner_WAPE_%": 31.06,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 10.9,
@@ -551,15 +551,57 @@
       "avg_daily_history": 2.2,
       "outliers_normalized": 7,
       "april_days_capped": 0,
-      "best_model": "seasonal_naive",
-      "best_test_WAPE_%": 51.87,
-      "best_test_MAPE_%": 49.04,
+      "forecast_model": "seasonal_naive",
+      "test_winner": "snaive_drift",
+      "test_winner_WAPE_%": 28.33,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 20.8,
           "RMSE": 26.3,
           "WAPE_%": 51.87,
           "MAPE_%": 49.04
+        },
+        "snaive_drift": {
+          "MAE": 11.4,
+          "RMSE": 15.3,
+          "WAPE_%": 28.33,
+          "MAPE_%": 25.87
+        },
+        "moving_avg_dow": {
+          "MAE": 30.5,
+          "RMSE": 33.8,
+          "WAPE_%": 75.94,
+          "MAPE_%": 74.52
+        },
+        "holt_winters": {
+          "MAE": 19.4,
+          "RMSE": 24.8,
+          "WAPE_%": 48.28,
+          "MAPE_%": 42.41
+        },
+        "sarimax": {
+          "MAE": 12.9,
+          "RMSE": 18.7,
+          "WAPE_%": 32.19,
+          "MAPE_%": 28.88
+        },
+        "theta": {
+          "MAE": 27.6,
+          "RMSE": 31.6,
+          "WAPE_%": 68.68,
+          "MAPE_%": 62.1
+        },
+        "linreg_calendar": {
+          "MAE": 12.9,
+          "RMSE": 14.6,
+          "WAPE_%": 32.0,
+          "MAPE_%": 38.88
+        },
+        "gbr_calendar": {
+          "MAE": 26.8,
+          "RMSE": 29.6,
+          "WAPE_%": 66.73,
+          "MAPE_%": 66.18
         }
       },
       "forecast_mean_daily": 40.0
@@ -568,15 +610,57 @@
       "avg_daily_history": 0.9,
       "outliers_normalized": 0,
       "april_days_capped": 18,
-      "best_model": "seasonal_naive",
-      "best_test_WAPE_%": 93.1,
-      "best_test_MAPE_%": 48.15,
+      "forecast_model": "seasonal_naive",
+      "test_winner": "theta",
+      "test_winner_WAPE_%": 80.87,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 1.0,
           "RMSE": 1.2,
           "WAPE_%": 93.1,
           "MAPE_%": 48.15
+        },
+        "snaive_drift": {
+          "MAE": 1.6,
+          "RMSE": 1.8,
+          "WAPE_%": 150.95,
+          "MAPE_%": 98.73
+        },
+        "moving_avg_dow": {
+          "MAE": 1.0,
+          "RMSE": 1.3,
+          "WAPE_%": 98.88,
+          "MAPE_%": 49.19
+        },
+        "holt_winters": {
+          "MAE": 1.0,
+          "RMSE": 1.2,
+          "WAPE_%": 98.29,
+          "MAPE_%": 48.6
+        },
+        "sarimax": {
+          "MAE": 0.9,
+          "RMSE": 1.1,
+          "WAPE_%": 82.9,
+          "MAPE_%": 37.71
+        },
+        "theta": {
+          "MAE": 0.8,
+          "RMSE": 1.1,
+          "WAPE_%": 80.87,
+          "MAPE_%": 29.07
+        },
+        "linreg_calendar": {
+          "MAE": 0.9,
+          "RMSE": 1.1,
+          "WAPE_%": 83.53,
+          "MAPE_%": 37.76
+        },
+        "gbr_calendar": {
+          "MAE": 0.9,
+          "RMSE": 1.1,
+          "WAPE_%": 82.77,
+          "MAPE_%": 32.14
         }
       },
       "forecast_mean_daily": 1.0

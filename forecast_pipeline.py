@@ -363,30 +363,38 @@ MODEL_LABELS = {
 
 
 def evaluate(clean: pd.Series, sparse: bool = False):
-    """Backtest candidate models on the last TEST_DAYS; return per-model
-    metrics and the winner (lowest WAPE). Very thin queues are restricted to
-    seasonal-naive so trend/drift models can't extrapolate absurd values."""
-    # short (recently launched) series -> shrink the holdout, seasonal_naive only
+    """Backtest ALL 8 methods on the last TEST_DAYS and return per-model metrics
+    + predictions and the winner (lowest WAPE).
+
+    All 8 are always scored so the leaderboard is fully populated; a method that
+    can't fit (too few points on a launched queue) is recorded with an error.
+    For the FORWARD forecast, however, thin queues are pinned to seasonal-naive
+    (`safe_best`) so trend/drift models can't extrapolate absurd values."""
+    # short (recently launched) series -> shrink the holdout
     test_days = TEST_DAYS
     if len(clean) < TEST_DAYS + 3 * SEASON:
         test_days = max(SEASON, len(clean) // 4)
         sparse = True
     train, test = clean.iloc[:-test_days], clean.iloc[-test_days:]
-    candidates = {"seasonal_naive": MODELS["seasonal_naive"]} if sparse else MODELS
     results, preds = {}, {}
-    for name, fn in candidates.items():
+    for name, fn in MODELS.items():                 # always try all 8
         try:
             pred = np.clip(fn(train, len(test)), 0, None)
             results[name] = metrics(test, pred)
             preds[name] = np.round(pred, 1).tolist()
         except Exception as e:
-            results[name] = {"error": str(e)[:100], "WAPE_%": float("inf")}
-    # select on WAPE (robust across high- and low-volume segments)
-    best = min(results, key=lambda k: results[k].get("WAPE_%") or float("inf"))
+            results[name] = {"error": str(e)[:100], "WAPE_%": None}
+
+    def _wape(k):
+        w = results[k].get("WAPE_%")
+        return w if isinstance(w, (int, float)) else float("inf")
+    ranked_best = min(results, key=_wape)            # most accurate on the test
+    # safety: pin thin queues to seasonal_naive for the forward forecast
+    safe_best = "seasonal_naive" if sparse else ranked_best
     backtest = {"dates": [d.strftime("%Y-%m-%d") for d in test.index],
                 "actual": np.round(test.values, 1).tolist(),
                 "predictions": preds}
-    return results, best, backtest
+    return results, safe_best, ranked_best, backtest
 
 
 # =========================================================================
@@ -463,7 +471,7 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
 
         sparse = float(daily[col].mean()) < 5      # micro-queue guard
         print(f"[3/5] {col}: back-testing 8 methods on the test set ...")
-        ev, best, backtest = evaluate(clean, sparse=sparse)
+        ev, best, test_winner, backtest = evaluate(clean, sparse=sparse)
 
         print(f"[4/5] {col}: forecasting next {horizon} days with '{best}' ...")
         fc = forecast_future(clean, horizon, best)
@@ -476,9 +484,9 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
             "avg_daily_history": round(float(daily[col].mean()), 1),
             "outliers_normalized": n_out,
             "april_days_capped": n_apr,
-            "best_model": best,
-            "best_test_WAPE_%": ev[best].get("WAPE_%"),
-            "best_test_MAPE_%": ev[best].get("MAPE_%"),
+            "forecast_model": best,
+            "test_winner": test_winner,
+            "test_winner_WAPE_%": ev[test_winner].get("WAPE_%"),
             "all_model_metrics": ev,
             "forecast_mean_daily": round(float(fc["forecast"].mean()), 0),
         }
@@ -486,7 +494,8 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
         hist = clean.iloc[-90:]
         ui["segments"][col] = {
             "avg_daily_history": round(float(daily[col].mean()), 1),
-            "best_model": best,
+            "forecast_model": best,
+            "test_winner": test_winner,
             "metrics": ev,
             "history": {"dates": [d.strftime("%Y-%m-%d") for d in hist.index],
                         "values": np.round(hist.values, 1).tolist()},
@@ -496,8 +505,8 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
                          "lower": fc["lower_80"].tolist(),
                          "upper": fc["upper_80"].tolist()},
         }
-        print(f"      best={best} (WAPE {ev[best].get('WAPE_%')}%)  "
-              f"naive_WAPE={ev['seasonal_naive']['WAPE_%']}%")
+        print(f"      test winner={test_winner} (WAPE {ev[test_winner].get('WAPE_%')}%)  "
+              f"forecast model={best}")
 
     with open(os.path.join(OUT_DIR, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)

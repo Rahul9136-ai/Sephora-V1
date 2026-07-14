@@ -82,10 +82,22 @@ A Flask dashboard to explore the results:
 python app.py            REM -> http://127.0.0.1:5056
 ```
 
-Pick any segment to see: the 8-method **test-set accuracy table** (WAPE / MAPE /
-MAE / RMSE, best highlighted), a **test-window chart** of actual vs every method
-(toggle methods on/off), and the **history + 30-day forecast** with its 80%
-interval. A "Retrain now" button reruns the whole pipeline on demand.
+**Segment detail** tab — pick any segment to see: the 8-method **test-set
+accuracy table** (WAPE / MAPE / MAE / RMSE, best highlighted), a **test-window
+chart** of actual vs every method (toggle methods on/off), and the **history +
+30-day forecast** with its 80% interval.
+
+**Leaderboard** tab — a wins-per-method tally plus a full **WAPE % heat-map
+matrix** (every segment × all 8 methods, best per row in green, worse cells
+tinted red). All 8 methods are scored for *every* segment, including the thin
+launched queues.
+
+> Two "best" models are tracked per segment: the **test winner** (most accurate
+> on the hold-out) and the **forecast model** actually used going forward. They
+> match except on very thin/launched queues, where the forward forecast is
+> pinned to seasonal-naive for safety (shown as a "forecast uses…" badge).
+
+A "Retrain now" button reruns the whole pipeline on demand.
 
 ## Run it
 
