@@ -37,10 +37,14 @@ warnings.filterwarnings("ignore")
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_XLSX = r"C:\Users\lenovo\Desktop\Ss.xlsx"
 OUT_DIR = os.path.join(HERE, "outputs")
+DATA_DIR = os.path.join(HERE, "data")           # user-added actuals/orders/events
+ACTUALS_CSV = os.path.join(DATA_DIR, "actuals.csv")   # date,segment,contacts
+ORDERS_CSV = os.path.join(DATA_DIR, "orders.csv")     # date,orders
+EVENTS_CSV = os.path.join(DATA_DIR, "events.csv")     # start,end,name,impact_pct
 
 # ---- forecasting config -------------------------------------------------
 TEST_DAYS = 28          # holdout length for accuracy evaluation
-HORIZON = 30            # days to forecast beyond the last observed date
+HORIZON = 90            # days to forecast (3-month rolling forecast)
 SEASON = 7              # weekly seasonality
 
 # Forecast granularity = the 10 Country-Channel-Language segments ("LOBs"),
@@ -109,11 +113,92 @@ def load_daily(xlsx_path: str) -> pd.DataFrame:
 
     wide = (raw.groupby(["Call_Date", "segment"])["Contacts"].sum()
                .unstack(fill_value=0))
-    order = wide.sum().sort_values(ascending=False).index.tolist()
+    wide = _merge_new_actuals(wide)                  # append user-added actuals
+    order = wide.drop(columns=["total"], errors="ignore").sum() \
+                .sort_values(ascending=False).index.tolist()
     wide = wide[order]
     wide.insert(0, "total", wide.sum(axis=1))
     wide.index.name = "date"
     return wide.asfreq("D")                          # exposes missing days
+
+
+def _merge_new_actuals(wide: pd.DataFrame) -> pd.DataFrame:
+    """Overlay user-added daily actuals (data/actuals.csv: date,segment,contacts)
+    onto the Excel history, extending the date range as needed. `segment='total'`
+    rows are ignored (total is recomputed from the segments)."""
+    if not os.path.exists(ACTUALS_CSV):
+        return wide
+    add = pd.read_csv(ACTUALS_CSV)
+    if add.empty:
+        return wide
+    add["date"] = pd.to_datetime(add["date"])
+    add = add[add["segment"].astype(str).str.lower() != "total"]
+    for _, r in add.iterrows():
+        seg = str(r["segment"]).strip().upper()
+        if seg not in wide.columns:
+            wide[seg] = 0.0
+        wide.loc[r["date"], seg] = float(r["contacts"])
+    return wide.fillna(0.0).sort_index()
+
+
+def load_orders(index: pd.DatetimeIndex):
+    """Daily order counts (data/orders.csv: date,orders) reindexed to `index`.
+    Returns a float Series (missing days interpolated) or None if no data."""
+    if not os.path.exists(ORDERS_CSV):
+        return None
+    o = pd.read_csv(ORDERS_CSV)
+    if o.empty:
+        return None
+    o["date"] = pd.to_datetime(o["date"])
+    s = o.groupby("date")["orders"].sum().astype(float)
+    full = pd.date_range(min(s.index.min(), index.min()),
+                         max(s.index.max(), index.max()), freq="D")
+    return s.reindex(full).interpolate().ffill().bfill()
+
+
+def _extend_orders(orders: pd.Series, future_idx: pd.DatetimeIndex) -> pd.Series:
+    """Return orders covering history + the forecast horizon. Future days the
+    user already supplied are kept; the rest are projected from a weekly
+    seasonal average so the exog driver is defined across the whole forecast."""
+    if orders is None:
+        return None
+    hist = orders[orders.index < future_idx[0]]
+    proj = {}
+    for d in future_idx:
+        if d in orders.index and not pd.isna(orders.loc[d]):
+            proj[d] = orders.loc[d]
+        else:
+            same = hist[hist.index.dayofweek == d.dayofweek]
+            proj[d] = float(same.iloc[-4:].mean()) if len(same) else float(hist.iloc[-SEASON:].mean() if len(hist) else 0)
+    return pd.concat([hist, pd.Series(proj)]).sort_index()
+
+
+def load_events() -> list:
+    """Event calendar (data/events.csv: start,end,name,impact_pct). impact_pct is
+    the expected % volume uplift during the window; used both as a note and to
+    lift the future forecast for known promos."""
+    if not os.path.exists(EVENTS_CSV):
+        return []
+    e = pd.read_csv(EVENTS_CSV)
+    out = []
+    for _, r in e.iterrows():
+        try:
+            out.append({"start": pd.to_datetime(r["start"]),
+                        "end": pd.to_datetime(r["end"]),
+                        "name": str(r["name"]),
+                        "impact_pct": float(r.get("impact_pct", 0) or 0)})
+        except Exception:
+            continue
+    return out
+
+
+def event_factor(index: pd.DatetimeIndex, events: list) -> np.ndarray:
+    """Multiplicative uplift per date from the event calendar (1.0 = no event)."""
+    f = np.ones(len(index))
+    for ev in events:
+        m = np.asarray((index >= ev["start"]) & (index <= ev["end"]))
+        f[m] *= (1 + ev["impact_pct"] / 100.0)
+    return f
 
 
 def segment_columns(daily: pd.DataFrame) -> list:
@@ -259,13 +344,16 @@ def metrics(actual, pred) -> dict:
             "MAPE_%": round(mape, 2) if mape is not None else None}
 
 
-# ---- candidate models: each returns a point forecast of `steps` days -----
-def _predict_seasonal_naive(train, steps):
+# ---- candidate models --------------------------------------------------
+# Every model takes (train, steps, xtr=None, xfu=None); xtr/xfu are optional
+# exogenous DataFrames (e.g. daily orders) aligned to the train / future dates.
+# Simple models ignore exog; SARIMA and the regressions use it when present.
+def _predict_seasonal_naive(train, steps, xtr=None, xfu=None):
     last = train.iloc[-SEASON:].values
     return np.array([last[i % SEASON] for i in range(steps)])
 
 
-def _predict_snaive_drift(train, steps):
+def _predict_snaive_drift(train, steps, xtr=None, xfu=None):
     """Seasonal naive + weekly drift (captures slow level trend)."""
     last = train.iloc[-SEASON:].values
     if len(train) >= 2 * SEASON:
@@ -276,22 +364,23 @@ def _predict_snaive_drift(train, steps):
     return np.array([last[i % SEASON] + drift * (i + 1) for i in range(steps)])
 
 
-def _predict_sarimax(train, steps):
+def _predict_sarimax(train, steps, xtr=None, xfu=None):
     from statsmodels.tsa.statespace.sarimax import SARIMAX
-    fit = SARIMAX(train, order=(0, 1, 1), seasonal_order=(0, 1, 1, SEASON),
+    fit = SARIMAX(train, exog=xtr, order=(0, 1, 1),
+                  seasonal_order=(0, 1, 1, SEASON),
                   enforce_stationarity=False,
                   enforce_invertibility=False).fit(disp=False)
-    return np.asarray(fit.forecast(steps=steps))
+    return np.asarray(fit.forecast(steps=steps, exog=xfu))
 
 
-def _predict_holtwinters(train, steps):
+def _predict_holtwinters(train, steps, xtr=None, xfu=None):
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     fit = ExponentialSmoothing(train, trend="add", damped_trend=True,
                                seasonal="add", seasonal_periods=SEASON).fit()
     return np.asarray(fit.forecast(steps))
 
 
-def _predict_moving_avg(train, steps):
+def _predict_moving_avg(train, steps, xtr=None, xfu=None):
     """Weekday moving average: each future day = mean of the last 4 same-weekday
     observations (a smoothed seasonal naive)."""
     out = []
@@ -302,40 +391,43 @@ def _predict_moving_avg(train, steps):
     return np.asarray(out, float)
 
 
-def _predict_theta(train, steps):
+def _predict_theta(train, steps, xtr=None, xfu=None):
     from statsmodels.tsa.forecasting.theta import ThetaModel
     fit = ThetaModel(np.asarray(train, float), period=SEASON).fit()
     return np.asarray(fit.forecast(steps))
 
 
-def _calendar_features(index: pd.DatetimeIndex, t0: pd.Timestamp) -> np.ndarray:
-    """Day-of-week one-hot + a linear time trend (days since series start)."""
+def _calendar_features(index, t0, exog=None):
+    """Day-of-week one-hot + linear time trend (+ optional exog columns)."""
     dow = pd.get_dummies(index.dayofweek).reindex(columns=range(7), fill_value=0)
     trend = ((index - t0).days).to_numpy().reshape(-1, 1)
-    return np.hstack([dow.to_numpy(float), trend / 30.0])
+    feats = [dow.to_numpy(float), trend / 30.0]
+    if exog is not None:
+        feats.append(np.asarray(exog, float).reshape(len(index), -1))
+    return np.hstack(feats)
 
 
 def _predict_regression(estimator):
-    def _fn(train, steps):
+    def _fn(train, steps, xtr=None, xfu=None):
         t0 = train.index[0]
-        X = _calendar_features(train.index, t0)
+        X = _calendar_features(train.index, t0, xtr)
         estimator.fit(X, train.values)
         fut = pd.date_range(train.index[-1] + pd.Timedelta(days=1),
                             periods=steps, freq="D")
-        return np.asarray(estimator.predict(_calendar_features(fut, t0)))
+        return np.asarray(estimator.predict(_calendar_features(fut, t0, xfu)))
     return _fn
 
 
-def _predict_linreg(train, steps):
+def _predict_linreg(train, steps, xtr=None, xfu=None):
     from sklearn.linear_model import LinearRegression
-    return _predict_regression(LinearRegression())(train, steps)
+    return _predict_regression(LinearRegression())(train, steps, xtr, xfu)
 
 
-def _predict_gbr(train, steps):
+def _predict_gbr(train, steps, xtr=None, xfu=None):
     from sklearn.ensemble import GradientBoostingRegressor
     est = GradientBoostingRegressor(n_estimators=200, max_depth=3,
                                     learning_rate=0.05, random_state=0)
-    return _predict_regression(est)(train, steps)
+    return _predict_regression(est)(train, steps, xtr, xfu)
 
 
 # 8 methods compared on the test set (labels shown in the UI)
@@ -362,24 +454,34 @@ MODEL_LABELS = {
 }
 
 
-def evaluate(clean: pd.Series, sparse: bool = False):
+def _exog_df(orders_full, index):
+    """1-column exog DataFrame (orders) aligned to `index`, or None."""
+    if orders_full is None:
+        return None
+    vals = orders_full.reindex(index).ffill().bfill()
+    return pd.DataFrame({"orders": vals.values}, index=index)
+
+
+def evaluate(clean: pd.Series, sparse: bool = False, orders_full=None):
     """Backtest ALL 8 methods on the last TEST_DAYS and return per-model metrics
     + predictions and the winner (lowest WAPE).
 
     All 8 are always scored so the leaderboard is fully populated; a method that
     can't fit (too few points on a launched queue) is recorded with an error.
     For the FORWARD forecast, however, thin queues are pinned to seasonal-naive
-    (`safe_best`) so trend/drift models can't extrapolate absurd values."""
+    (`safe_best`) so trend/drift models can't extrapolate absurd values.
+    `orders_full` (optional) feeds SARIMA + the regressions as an exog driver."""
     # short (recently launched) series -> shrink the holdout
     test_days = TEST_DAYS
     if len(clean) < TEST_DAYS + 3 * SEASON:
         test_days = max(SEASON, len(clean) // 4)
         sparse = True
     train, test = clean.iloc[:-test_days], clean.iloc[-test_days:]
+    xtr, xte = _exog_df(orders_full, train.index), _exog_df(orders_full, test.index)
     results, preds = {}, {}
     for name, fn in MODELS.items():                 # always try all 8
         try:
-            pred = np.clip(fn(train, len(test)), 0, None)
+            pred = np.clip(fn(train, len(test), xtr, xte), 0, None)
             results[name] = metrics(test, pred)
             preds[name] = np.round(pred, 1).tolist()
         except Exception as e:
@@ -400,14 +502,17 @@ def evaluate(clean: pd.Series, sparse: bool = False):
 # =========================================================================
 # 5. FORECAST FUTURE (using the winning model, with an interval)
 # =========================================================================
-def forecast_future(clean: pd.Series, horizon: int, model_name: str) -> pd.DataFrame:
-    """Refit the winning model on ALL cleaned data and project `horizon`
-    days ahead. The interval is derived from in-sample weekly residuals."""
+def forecast_future(clean: pd.Series, horizon: int, model_name: str,
+                    orders_full=None, events=None) -> pd.DataFrame:
+    """Refit the winning model on ALL cleaned data and project `horizon` days
+    ahead. Orders feed the model as an exog driver; known future events lift the
+    forecast within their windows. The interval comes from weekly residuals."""
     idx = pd.date_range(clean.index[-1] + pd.Timedelta(days=1),
                         periods=horizon, freq="D")
+    xtr, xfu = _exog_df(orders_full, clean.index), _exog_df(orders_full, idx)
     fn = MODELS.get(model_name, _predict_seasonal_naive)
     try:
-        mean = np.clip(fn(clean, horizon), 0, None)
+        mean = np.clip(fn(clean, horizon, xtr, xfu), 0, None)
     except Exception:
         mean = np.clip(_predict_seasonal_naive(clean, horizon), 0, None)
 
@@ -424,11 +529,17 @@ def forecast_future(clean: pd.Series, horizon: int, model_name: str) -> pd.DataF
         float(clean.std() * 0.15)
     band = 1.2816 * resid_std * np.sqrt(1 + np.arange(horizon) / SEASON)
 
-    upper_cap = recent_peak * 2.0 if recent_peak else None
+    # known future events lift the forecast within their windows
+    ef = event_factor(idx, events or [])
+    mean = mean * ef
+    band = band * ef
+
+    upper_cap = (recent_peak * 2.0 * ef) if recent_peak else None
     out = pd.DataFrame({
         "forecast": np.round(mean),
         "lower_80": np.clip(mean - band, 0, None).round(0),
         "upper_80": np.round(np.clip(mean + band, 0, upper_cap)),
+        "event_factor": np.round(ef, 3),
     }, index=idx)
     out.index.name = "date"
     return out
@@ -448,16 +559,30 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
     segs = [c for c in cols if c != "total"]
     print(f"      {len(segs)} segments: {', '.join(segs)}")
 
+    # exogenous drivers: daily orders + known-event calendar
+    future_idx = pd.date_range(daily.index[-1] + pd.Timedelta(days=1),
+                               periods=horizon, freq="D")
+    orders = load_orders(daily.index)
+    orders_full = _extend_orders(orders, future_idx) if orders is not None else None
+    events = load_events()
+    upcoming = [e for e in events if e["end"] >= daily.index[-1]]
+    print(f"      orders: {'yes' if orders is not None else 'none'} · "
+          f"events: {len(events)} ({len(upcoming)} in/after horizon)")
+
     summary = {"generated_at": datetime.now().isoformat(timespec="seconds"),
                "source": xlsx_path,
                "history_days": len(daily),
                "history_start": str(daily.index.min().date()),
                "history_end": str(daily.index.max().date()),
                "horizon_days": horizon,
+               "orders_provided": orders is not None,
+               "events": [{"start": str(e["start"].date()), "end": str(e["end"].date()),
+                           "name": e["name"], "impact_pct": e["impact_pct"]} for e in events],
                "model_labels": MODEL_LABELS,
                "segments": {}}
     ui = {"generated_at": summary["generated_at"], "model_labels": MODEL_LABELS,
-          "horizon_days": horizon, "segments": {}}
+          "horizon_days": horizon, "orders_provided": orders is not None,
+          "events": summary["events"], "segments": {}}
 
     all_clean, all_forecast = {}, {}
     for col in cols:
@@ -471,10 +596,12 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
 
         sparse = float(daily[col].mean()) < 5      # micro-queue guard
         print(f"[3/5] {col}: back-testing 8 methods on the test set ...")
-        ev, best, test_winner, backtest = evaluate(clean, sparse=sparse)
+        ev, best, test_winner, backtest = evaluate(clean, sparse=sparse,
+                                                   orders_full=orders_full)
 
         print(f"[4/5] {col}: forecasting next {horizon} days with '{best}' ...")
-        fc = forecast_future(clean, horizon, best)
+        fc = forecast_future(clean, horizon, best,
+                             orders_full=orders_full, events=events)
         fc.to_csv(os.path.join(OUT_DIR, f"forecast_{col}.csv"))
         all_forecast[col] = fc
 

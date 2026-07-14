@@ -71,6 +71,20 @@
     border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:12px}
   .chip b{background:var(--accent);color:#fff;border-radius:12px;padding:0 8px;font-size:11px}
   .chip.zero{opacity:.45}.chip.zero b{background:var(--line);color:var(--muted)}
+  .formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:6px}
+  .form{display:flex;flex-direction:column;gap:9px}
+  .form .hint{color:var(--muted);font-size:11px;margin:-4px 0 4px}
+  .fld{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
+  .fld input,.fld select{background:var(--bg);border:1px solid var(--line);color:var(--ink);
+    border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit}
+  .fld input:focus,.fld select:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;
+    padding:9px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-top:2px}
+  button.primary.big{padding:12px 26px;font-size:15px;margin-top:8px}
+  button.primary:disabled{opacity:.5}
+  button.del{background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:6px;cursor:pointer;padding:2px 8px}
+  button.del:hover{color:var(--c5);border-color:var(--c5)}
   .xscroll{overflow-x:auto}
   table.matrix{font-size:12px;min-width:760px}
   table.matrix td,table.matrix th{padding:7px 9px}
@@ -125,10 +139,12 @@ function renderSegs(){
 
 function tabbar(active){
   const bar=el('div',{class:'tabbar'});
+  const go={detail:()=>select(CUR||'total'),board:showBoard,data:showData};
   const mk=(id,txt)=>{const b=el('button',{class:'tab'+(active===id?' on':'')},txt);
-    b.onclick=()=>id==='board'?showBoard():select(CUR||'total');return b;};
+    b.onclick=go[id];return b;};
   bar.appendChild(mk('detail','Segment detail'));
   bar.appendChild(mk('board','Leaderboard'));
+  bar.appendChild(mk('data','Data & Retrain'));
   return bar;
 }
 
@@ -327,6 +343,98 @@ function showBoard(){
   });
   scroll.appendChild(t); mp.appendChild(scroll); main.appendChild(mp);
 }
+
+// ---------- Data & Retrain ----------
+async function post(url,body){const r=await fetch(url,{method:'POST',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({})); if(!r.ok||j.ok===false)throw new Error(j.error||'failed');return j;}
+
+function field(label,input){return el('label',{class:'fld'},[el('span',{},label),input]);}
+function inp(type,ph,attrs={}){const e=el('input',Object.assign({type,placeholder:ph||''},attrs));return e;}
+
+async function showData(){
+  VIEW='data';
+  document.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));
+  const info=await fetch('/api/data').then(r=>r.json()).catch(()=>({events:[]}));
+  const main=document.getElementById('main'); main.innerHTML='';
+  main.appendChild(tabbar('data'));
+  main.appendChild(el('h2',{},'Add data & retrain'));
+  main.appendChild(el('div',{class:'sub'},
+    `New actuals, orders and events feed the model. Retrain rebuilds on the full dataset and produces a ${DATA.horizon_days}-day (3-month) rolling forecast from the last data point.`));
+
+  const segCodes=Object.keys(DATA.segments);
+  const grid=el('div',{class:'formgrid'});
+
+  // --- Add actual ---
+  const f1=el('form',{class:'panel form'});
+  f1.appendChild(el('h3',{},'Add actual data'));
+  const a_date=inp('date','',{required:'1'});
+  const a_seg=el('select',{}, segCodes.map(c=>el('option',{value:c},c==='total'?'total':c)));
+  const a_val=inp('number','contacts',{min:'0',step:'1',required:'1'});
+  const a_ord=inp('number','orders (optional)',{min:'0',step:'1'});
+  f1.append(field('Date',a_date),field('Segment',a_seg),field('Contacts',a_val),field('Orders (optional)',a_ord));
+  const b1=el('button',{class:'primary',type:'submit'},'Add actual'); f1.appendChild(b1);
+  f1.onsubmit=async ev=>{ev.preventDefault();try{
+    await post('/api/actual',{date:a_date.value,segment:a_seg.value,contacts:a_val.value,orders:a_ord.value});
+    toast('Actual added'); a_val.value='';a_ord.value='';}catch(e){toast('Error: '+e.message,true);}};
+  grid.appendChild(f1);
+
+  // --- Add order ---
+  const f2=el('form',{class:'panel form'});
+  f2.appendChild(el('h3',{},'Add orders'));
+  f2.appendChild(el('div',{class:'hint'},'Daily order count — a demand driver fed to SARIMA & the regression models.'));
+  const o_date=inp('date','',{required:'1'}); const o_val=inp('number','orders',{min:'0',step:'1',required:'1'});
+  f2.append(field('Date',o_date),field('Orders',o_val));
+  const b2=el('button',{class:'primary',type:'submit'},'Add orders'); f2.appendChild(b2);
+  f2.onsubmit=async ev=>{ev.preventDefault();try{
+    await post('/api/order',{date:o_date.value,orders:o_val.value});
+    toast('Orders added'); o_val.value='';}catch(e){toast('Error: '+e.message,true);}};
+  grid.appendChild(f2);
+
+  // --- Add event ---
+  const f3=el('form',{class:'panel form'});
+  f3.appendChild(el('h3',{},'Add event (known promo)'));
+  f3.appendChild(el('div',{class:'hint'},'Lifts the future forecast by the impact % within the window.'));
+  const e_s=inp('date','',{required:'1'}), e_e=inp('date','',{required:'1'}),
+        e_n=inp('text','name',{required:'1'}), e_i=inp('number','impact %',{step:'1',required:'1'});
+  f3.append(field('Start',e_s),field('End',e_e),field('Name',e_n),field('Impact %',e_i));
+  const b3=el('button',{class:'primary',type:'submit'},'Add event'); f3.appendChild(b3);
+  f3.onsubmit=async ev=>{ev.preventDefault();try{
+    await post('/api/event',{start:e_s.value,end:e_e.value,name:e_n.value,impact_pct:e_i.value});
+    toast('Event added'); showData();}catch(e){toast('Error: '+e.message,true);}};
+  grid.appendChild(f3);
+  main.appendChild(grid);
+
+  // --- current events ---
+  const ep=el('div',{class:'panel'});
+  ep.appendChild(el('h3',{},'Event calendar'));
+  const et=el('table');
+  et.appendChild(el('tr',{},[el('th',{},'Name'),el('th',{},'Start'),el('th',{},'End'),el('th',{},'Impact %'),el('th',{},'')]));
+  (info.events||[]).forEach(evr=>{
+    const del=el('button',{class:'del'},'✕');
+    del.onclick=async()=>{try{await post('/api/event/delete',{name:evr.name});showData();}catch(e){toast('Error',true);}};
+    et.appendChild(el('tr',{},[el('td',{},evr.name),el('td',{},evr.start),el('td',{},evr.end),
+      el('td',{},String(evr.impact_pct)),el('td',{},del)]));
+  });
+  ep.appendChild(et);
+  main.appendChild(ep);
+
+  // --- retrain ---
+  const rp=el('div',{class:'panel',style:'text-align:center'});
+  rp.appendChild(el('div',{class:'sub'},`${info.actuals_rows||0} added actuals · ${info.orders_rows||0} order rows · ${(info.events||[]).length} events`));
+  const rb=el('button',{class:'primary big'},`Retrain & ${DATA.horizon_days}-day forecast`);
+  rb.onclick=async()=>{rb.disabled=true;rb.textContent='Retraining…';
+    try{await post('/api/retrain',{});await load();toast('Retrained on new data');select('total');}
+    catch(e){toast('Retrain failed: '+e.message,true);rb.disabled=false;rb.textContent='Retrain & forecast';}};
+  rp.appendChild(rb);
+  main.appendChild(rp);
+}
+
+let TOAST_T=null;
+function toast(msg,bad){const t=document.getElementById('tip');t.textContent=msg;
+  t.style.background=bad?'#7a1020':'#0a5';t.style.opacity='1';
+  t.style.left='50%';t.style.top='70px';t.style.transform='translateX(-50%)';
+  clearTimeout(TOAST_T);TOAST_T=setTimeout(()=>t.style.opacity='0',2200);}
 
 document.getElementById('retrainBtn').onclick=async(e)=>{
   const b=e.target; b.disabled=true; b.textContent='Retraining…';

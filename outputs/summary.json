@@ -1,10 +1,31 @@
 {
-  "generated_at": "2026-07-14T20:31:07",
+  "generated_at": "2026-07-15T00:12:04",
   "source": "C:\\Users\\lenovo\\Desktop\\Ss.xlsx",
   "history_days": 309,
   "history_start": "2025-08-19",
   "history_end": "2026-06-23",
-  "horizon_days": 30,
+  "horizon_days": 90,
+  "orders_provided": false,
+  "events": [
+    {
+      "start": "2025-11-20",
+      "end": "2025-12-31",
+      "name": "Holiday Peak",
+      "impact_pct": 80.0
+    },
+    {
+      "start": "2026-04-01",
+      "end": "2026-04-30",
+      "name": "Spring Savings Event",
+      "impact_pct": 50.0
+    },
+    {
+      "start": "2026-07-15",
+      "end": "2026-07-25",
+      "name": "Summer Promo (example)",
+      "impact_pct": 40.0
+    }
+  ],
   "model_labels": {
     "seasonal_naive": "Seasonal Naive",
     "snaive_drift": "Seasonal Naive + Drift",
@@ -73,7 +94,7 @@
           "MAPE_%": 21.7
         }
       },
-      "forecast_mean_daily": 5011.0
+      "forecast_mean_daily": 4692.0
     },
     "US-CH-EN": {
       "avg_daily_history": 2875.4,
@@ -132,7 +153,7 @@
           "MAPE_%": 34.23
         }
       },
-      "forecast_mean_daily": 900.0
+      "forecast_mean_daily": 344.0
     },
     "US-PH-EN": {
       "avg_daily_history": 1916.8,
@@ -191,7 +212,7 @@
           "MAPE_%": 21.78
         }
       },
-      "forecast_mean_daily": 1921.0
+      "forecast_mean_daily": 2045.0
     },
     "CA-CH-EN": {
       "avg_daily_history": 1057.0,
@@ -250,7 +271,7 @@
           "MAPE_%": 26.42
         }
       },
-      "forecast_mean_daily": 802.0
+      "forecast_mean_daily": 832.0
     },
     "CA-PH-EN": {
       "avg_daily_history": 465.3,
@@ -309,7 +330,7 @@
           "MAPE_%": 24.56
         }
       },
-      "forecast_mean_daily": 351.0
+      "forecast_mean_daily": 363.0
     },
     "US-EM-EN": {
       "avg_daily_history": 225.8,
@@ -368,7 +389,7 @@
           "MAPE_%": 19.67
         }
       },
-      "forecast_mean_daily": 395.0
+      "forecast_mean_daily": 411.0
     },
     "US-PH-SP": {
       "avg_daily_history": 92.4,
@@ -427,7 +448,7 @@
           "MAPE_%": 14.88
         }
       },
-      "forecast_mean_daily": 95.0
+      "forecast_mean_daily": 98.0
     },
     "CA-PH-FR": {
       "avg_daily_history": 50.4,
@@ -486,7 +507,7 @@
           "MAPE_%": 20.73
         }
       },
-      "forecast_mean_daily": 38.0
+      "forecast_mean_daily": 39.0
     },
     "CA-EM-EN": {
       "avg_daily_history": 8.9,
@@ -545,7 +566,7 @@
           "MAPE_%": 54.9
         }
       },
-      "forecast_mean_daily": 31.0
+      "forecast_mean_daily": 32.0
     },
     "CA-CH-FR": {
       "avg_daily_history": 2.2,
@@ -604,7 +625,7 @@
           "MAPE_%": 66.18
         }
       },
-      "forecast_mean_daily": 40.0
+      "forecast_mean_daily": 42.0
     },
     "CA-EM-FR": {
       "avg_daily_history": 0.9,

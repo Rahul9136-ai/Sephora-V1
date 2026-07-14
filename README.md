@@ -26,10 +26,10 @@ e.g. `US-EN`, `US-SP`, `CA-FR`). The aggregate country=`ALL` chat bucket is
    then imputes missing calendar days (e.g. the 2025-12-25 Christmas gap) using
    the same-weekday local median so weekly seasonality is preserved.
 3. **Normalize outliers (April-aware)** — see below.
-4. **Back-test & select model** — holds out the last 28 days, back-tests four
+4. **Back-test & select model** — holds out the last 28 days, back-tests eight
    candidate models, and keeps the most accurate one *per segment* (by WAPE).
-5. **Forecast** — refits the winner on all cleaned data and projects the next
-   30 days with an 80% confidence interval.
+5. **Forecast** — refits the winner on all cleaned data (with orders + event
+   drivers) and projects the next 90 days (3 months) with an 80% interval.
 6. **Persist** — writes every artifact to `outputs/` so a scheduler can rerun
    it unattended.
 
@@ -98,7 +98,7 @@ Best MAPE per segment, at a glance:
 
 ![Best-method MAPE by segment](outputs/mape_by_segment.png)
 
-Raw vs cleaned vs 30-day forecast for the total and all 10 segments (April promo
+Raw vs cleaned vs 90-day forecast for the total and all 10 segments (April promo
 window shaded):
 
 ![Forecast plot](outputs/forecast_plot.png)
@@ -118,12 +118,15 @@ python app.py            REM -> http://127.0.0.1:5056
 **Segment detail** tab — pick any segment to see: the 8-method **test-set
 accuracy table** (WAPE / MAPE / MAE / RMSE, best highlighted), a **test-window
 chart** of actual vs every method (toggle methods on/off), and the **history +
-30-day forecast** with its 80% interval.
+90-day (3-month) forecast** with its 80% interval.
 
 **Leaderboard** tab — a wins-per-method tally plus a full **WAPE % heat-map
 matrix** (every segment × all 8 methods, best per row in green, worse cells
 tinted red). All 8 methods are scored for *every* segment, including the thin
 launched queues.
+
+**Data & Retrain** tab — add new data and produce a fresh 3-month forecast (see
+below).
 
 > Two "best" models are tracked per segment: the **test winner** (most accurate
 > on the hold-out) and the **forecast model** actually used going forward. They
@@ -131,6 +134,26 @@ launched queues.
 > pinned to seasonal-naive for safety (shown as a "forecast uses…" badge).
 
 A "Retrain now" button reruns the whole pipeline on demand.
+
+## Add new data → retrain → 3-month rolling forecast
+
+The **Data & Retrain** UI tab (or the `data/` CSVs directly) lets you extend the
+model with three kinds of input; **Retrain** rebuilds on the full dataset and
+produces a **90-day (3-month) rolling forecast** starting the day after the last
+actual — so as you keep adding data, the forecast window rolls forward.
+
+| Input | File | Effect |
+|-------|------|--------|
+| **New actuals** | `data/actuals.csv` (`date,segment,contacts`) | appended/overlaid onto the Excel history, extending the date range |
+| **Orders** | `data/orders.csv` (`date,orders`) | a daily demand **driver** fed as an exogenous regressor to SARIMA + the two regression models; projected forward (or use your own future rows) so it informs the whole horizon |
+| **Events** | `data/events.csv` (`start,end,name,impact_pct`) | a known-promo calendar; each event **lifts the future forecast** by `impact_pct` within its window (e.g. an April Spring Sale at +50%) |
+
+So a known upcoming promo can be forecast explicitly rather than just normalized
+out of history — e.g. adding a *Summer Promo, +40%* over Jul 15–25 raises those
+days' forecast by 40% (visible as `event_factor` in `forecast_<segment>.csv`).
+
+Endpoints (all POST JSON): `/api/actual`, `/api/order`, `/api/event`,
+`/api/event/delete`, `/api/retrain`; `GET /api/data` returns the current calendar.
 
 ## Run it
 
@@ -165,7 +188,7 @@ schtasks /Delete /TN "Sephora Contact Forecast" /F  REM remove
 |------|----------|
 | `daily_contacts.csv`      | daily `total` + per-segment history |
 | `cleaning_<segment>.csv`  | per-day outlier decisions & cleaned values |
-| `forecast_<segment>.csv`  | next 30 days: `forecast`, `lower_80`, `upper_80` |
+| `forecast_<segment>.csv`  | next 90 days: `forecast`, `lower_80`, `upper_80` |
 | `forecast_plot.png`       | raw vs cleaned vs forecast, April window shaded |
 | `summary.json`            | run metadata, per-segment best model & accuracy (WAPE) |
 | `run.log`                 | scheduled-run history |
