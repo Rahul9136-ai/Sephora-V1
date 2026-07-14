@@ -10,12 +10,16 @@ Reads the artifacts written by forecast_pipeline.py (outputs/results.json,
 outputs/summary.json). Run the pipeline first if outputs/ is empty.
 """
 import csv
+import glob
+import io
 import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import (Flask, jsonify, render_template, request, send_file,
+                   send_from_directory)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, "outputs")
@@ -150,8 +154,38 @@ def _import_events(df):
     return n
 
 
+def _import_wide_actuals(df):
+    """Accept the wide actuals template: a `date` column + one column per
+    segment code (e.g. filled-in template). Melts to long and appends non-empty
+    cells. Returns rows imported, or None if it isn't a wide-actuals table."""
+    import pandas as pd
+    cols = {c.lower().strip(): c for c in df.columns}
+    if "date" not in cols:
+        return None
+    known = {s.upper() for s in _segments()}
+    seg_cols = [c for c in df.columns if str(c).strip().upper() in known]
+    if len(seg_cols) < 2:                               # need it to look wide
+        return None
+    n = 0
+    for _, r in df.iterrows():
+        d = str(r[cols["date"]])[:10]
+        for c in seg_cols:
+            v = r[c]
+            if v in (None, "") or (isinstance(v, float) and pd.isna(v)):
+                continue
+            try:
+                _append_row(ACTUALS_CSV, ["date", "segment", "contacts"],
+                            [d, str(c).strip().upper(), float(v)]); n += 1
+            except Exception:
+                continue
+    return n
+
+
 def _import_tabular(df):
     """Route a generic table to orders / actuals by its columns."""
+    wide = _import_wide_actuals(df)
+    if wide is not None:
+        return ("actuals", wide)
     cols = {c.lower().strip(): c for c in df.columns}
     if "date" in cols and "orders" in cols:
         n = 0
@@ -226,6 +260,83 @@ def api_upload():
                         "[date,segment,contacts]. Got: " + ", ".join(map(str, df.columns[:8]))}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:200]}), 400
+
+
+def _segments():
+    """Ordered segment codes (excluding total) from the last run."""
+    p = os.path.join(OUT_DIR, "summary.json")
+    if not os.path.exists(p):
+        return []
+    with open(p, encoding="utf-8") as f:
+        segs = json.load(f).get("segments", {})
+    return [s for s in segs if s != "total"]
+
+
+def _forecast_frames():
+    """{segment: DataFrame} from outputs/forecast_<seg>.csv."""
+    import pandas as pd
+    out = {}
+    for path in glob.glob(os.path.join(OUT_DIR, "forecast_*.csv")):
+        seg = os.path.basename(path)[len("forecast_"):-len(".csv")]
+        out[seg] = pd.read_csv(path, parse_dates=["date"])
+    return out
+
+
+@app.route("/api/download/forecast")
+def api_download_forecast():
+    """Combined workbook of the current 3-month forecast: a wide sheet
+    (date x segment) plus a detail sheet with the 80% interval."""
+    import pandas as pd
+    frames = _forecast_frames()
+    if not frames:
+        return jsonify({"error": "no forecast yet"}), 404
+    order = ["total"] + _segments()
+    wide, long = {}, []
+    for seg in order:
+        if seg not in frames:
+            continue
+        f = frames[seg].set_index("date")
+        wide[seg] = f["forecast"]
+        d = f.reset_index()[["date", "forecast", "lower_80", "upper_80"]].copy()
+        d.insert(1, "segment", seg)
+        long.append(d)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        pd.DataFrame(wide).to_excel(xw, sheet_name="Forecast")
+        pd.concat(long, ignore_index=True).to_excel(xw, sheet_name="Detail (80% CI)", index=False)
+    buf.seek(0)
+    fname = f"sephora_forecast_{datetime.now():%Y%m%d}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/download/template")
+def api_download_template():
+    """Blank actuals template to fill in future actuals and re-import.
+
+    Wide layout: a `date` column (the forecast dates) + one column per segment,
+    cells blank. A second sheet carries the current forecast as a reference.
+    Re-upload the filled 'Actuals' sheet via Import file, then Retrain.
+    """
+    import pandas as pd
+    frames = _forecast_frames()
+    if not frames:
+        return jsonify({"error": "retrain first to generate a template"}), 404
+    dates = frames.get("total", next(iter(frames.values())))["date"]
+    segs = _segments()
+    blank = pd.DataFrame({"date": pd.to_datetime(dates).dt.strftime("%Y-%m-%d")})
+    for s in segs:
+        blank[s] = ""                                   # fill with actual contacts
+    ref = pd.DataFrame({"date": blank["date"]})
+    for s in segs:
+        ref[s] = frames[s].set_index("date")["forecast"].values if s in frames else ""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        blank.to_excel(xw, sheet_name="Actuals", index=False)
+        ref.to_excel(xw, sheet_name="Forecast (reference)", index=False)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="actuals_template.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.route("/api/source/reset", methods=["POST"])

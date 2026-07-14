@@ -157,6 +157,19 @@ reverts to the default `Ss.xlsx`.
 
 Or add individual rows / a smaller amount of data through the three forms below.
 
+### Download the forecast & the actuals template
+
+The **Download** panel (Data & Retrain tab) provides two files:
+
+- **Forecast (Excel)** — the current 3-month forecast: a wide `date × segment`
+  sheet plus a detail sheet with the 80% interval (`GET /api/download/forecast`).
+  Each Segment-detail view also has a **⬇ CSV** link for that one segment.
+- **Actuals template (Excel)** — a blank sheet pre-filled with the forecast
+  **dates** down the rows and a column per segment (`GET /api/download/template`).
+  Fill in the actual contacts as they land, upload it via **Import file**, and
+  **Retrain** — the model rebuilds and the 3-month window rolls forward. The
+  template round-trips: the importer melts the wide grid back to actuals rows.
+
 | Input | File | Effect |
 |-------|------|--------|
 | **New actuals** | `data/actuals.csv` (`date,segment,contacts`) | appended/overlaid onto the Excel history, extending the date range |

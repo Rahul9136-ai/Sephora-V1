@@ -78,10 +78,17 @@
   .fld input,.fld select{background:var(--bg);border:1px solid var(--line);color:var(--ink);
     border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit}
   .fld input:focus,.fld select:focus{outline:1px solid var(--accent);border-color:var(--accent)}
-  button.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;
+  .primary{background:var(--accent);color:#fff;border:0;border-radius:8px;
     padding:9px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-top:2px}
-  button.primary.big{padding:12px 26px;font-size:15px;margin-top:8px}
-  button.primary:disabled{opacity:.5}
+  .primary.big{padding:12px 26px;font-size:15px;margin-top:8px}
+  .primary:disabled{opacity:.5}
+  a.primary{display:inline-block;text-decoration:none;text-align:center}
+  a.primary.alt2{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  .panelhead{display:flex;justify-content:space-between;align-items:center}
+  .panelhead h3{margin:0}
+  a.csvlink{color:var(--muted);text-decoration:none;font-size:11px;border:1px solid var(--line);
+    border-radius:6px;padding:3px 9px}
+  a.csvlink:hover{color:var(--accent);border-color:var(--accent)}
   button.del{background:transparent;border:1px solid var(--line);color:var(--muted);
     border-radius:6px;cursor:pointer;padding:2px 8px}
   button.del:hover{color:var(--c5);border-color:var(--c5)}
@@ -192,7 +199,11 @@ function select(code){
 
   // ---- forecast chart ----
   const fp=el('div',{class:'panel'});
-  fp.appendChild(el('h3',{},`History + ${DATA.horizon_days}-day forecast (80% interval)`));
+  const fh=el('div',{class:'panelhead'});
+  fh.appendChild(el('h3',{},`History + ${DATA.horizon_days}-day forecast (80% interval)`));
+  const csv=Object.assign(el('a',{class:'csvlink',href:`/outputs/forecast_${code}.csv`},'⬇ CSV'),{download:''});
+  fh.appendChild(csv);
+  fp.appendChild(fh);
   fp.appendChild(forecastChart(s));
   main.appendChild(fp);
 }
@@ -367,6 +378,17 @@ async function showData(){
   main.appendChild(el('h2',{},'Add data & retrain'));
   main.appendChild(el('div',{class:'sub'},
     `Upload a file or add rows below. Retrain rebuilds on the full dataset and produces a ${DATA.horizon_days}-day (3-month) rolling forecast from the last data point.`));
+
+  // --- Downloads ---
+  const dl=el('div',{class:'panel'});
+  dl.appendChild(el('h3',{},'Download'));
+  dl.appendChild(el('div',{class:'hint'},'Get the current 3-month forecast, or a blank actuals template pre-filled with the forecast dates — fill in future actuals, upload it above, and Retrain.'));
+  const dlrow=el('div',{class:'uprow'},[
+    Object.assign(el('a',{class:'primary',href:'/api/download/forecast'},'⬇ Forecast (Excel)'),{download:''}),
+    Object.assign(el('a',{class:'primary alt2',href:'/api/download/template'},'⬇ Actuals template (Excel)'),{download:''}),
+  ]);
+  dl.appendChild(dlrow);
+  main.appendChild(dl);
 
   // --- Import file (upload) ---
   const up=el('div',{class:'panel'});
