@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sephora-forecast-ui",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["C:\\Users\\lenovo\\Desktop\\Customer Churn\\sephora-forecast\\app.py"],
+      "port": 5056
+    }
+  ]
+}

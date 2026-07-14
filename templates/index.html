@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sephora Contact Forecast</title>
+<style>
+  :root{
+    --bg:#0e0e12; --panel:#17171d; --panel2:#1e1e26; --line:#2a2a34;
+    --ink:#f3f3f6; --muted:#9a9aa8; --accent:#e0006c; --good:#25c281;
+    --c0:#e0006c;--c1:#3b82f6;--c2:#f59e0b;--c3:#10b981;--c4:#a855f7;
+    --c5:#ef4444;--c6:#14b8a6;--c7:#eab308;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0;letter-spacing:.3px}
+  header h1 b{color:var(--accent)}
+  header .meta{color:var(--muted);font-size:12px}
+  .retrain{margin-left:auto;background:var(--accent);color:#fff;border:0;
+    padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px}
+  .retrain:disabled{opacity:.5;cursor:default}
+  .wrap{display:grid;grid-template-columns:230px 1fr;gap:0;min-height:calc(100vh - 60px)}
+  aside{border-right:1px solid var(--line);padding:12px;overflow:auto}
+  .seg{padding:9px 11px;border-radius:8px;cursor:pointer;margin-bottom:4px;
+    border:1px solid transparent;display:flex;justify-content:space-between;align-items:center}
+  .seg:hover{background:var(--panel)}
+  .seg.active{background:var(--panel2);border-color:var(--line)}
+  .seg .code{font-weight:600;letter-spacing:.4px}
+  .seg .vol{color:var(--muted);font-size:11px}
+  .seg.total .code{color:var(--accent)}
+  main{padding:20px 24px;overflow:auto}
+  h2{font-size:15px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 16px;min-width:120px}
+  .card .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .card .v{font-size:20px;font-weight:700;margin-top:2px}
+  .card .v small{font-size:12px;color:var(--muted);font-weight:400}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;margin-bottom:18px}
+  .panel h3{margin:0 0 12px;font-size:13px;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;
+    cursor:pointer;user-select:none}
+  tr.best td{background:rgba(37,194,129,.10)}
+  tr.best td:first-child{color:var(--good);font-weight:700}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:middle}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px}
+  .legend label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)}
+  .legend input{accent-color:var(--accent)}
+  svg{width:100%;height:auto;display:block}
+  .axis{stroke:var(--line);stroke-width:1}
+  .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3;opacity:.5}
+  .tick{fill:var(--muted);font-size:10px}
+  .badge{background:var(--panel2);border:1px solid var(--line);border-radius:20px;
+    padding:2px 10px;font-size:11px;color:var(--good)}
+  .tip{position:fixed;pointer-events:none;background:#000;border:1px solid var(--line);
+    border-radius:6px;padding:6px 9px;font-size:11px;opacity:0;transition:opacity .1s;z-index:9}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>Sephora</b> Contact Forecast</h1>
+  <span class="meta" id="meta"></span>
+  <button class="retrain" id="retrainBtn">Retrain now</button>
+</header>
+<div class="wrap">
+  <aside id="segs"></aside>
+  <main id="main"><div class="sub">Loading…</div></main>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
+let DATA=null, LABELS=null, CUR=null, HIDDEN={};
+
+function cvar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+const el=(t,a={},kids=[])=>{const e=document.createElement(t);
+  for(const k in a){if(k==='class')e.className=a[k];else if(k==='html')e.innerHTML=a[k];else e.setAttribute(k,a[k]);}
+  (Array.isArray(kids)?kids:[kids]).forEach(c=>e.appendChild(typeof c==='string'?document.createTextNode(c):c));return e;};
+
+async function load(){
+  const r=await fetch('/api/results');
+  if(!r.ok){document.getElementById('main').innerHTML='<div class="sub">No results yet — run the pipeline.</div>';return;}
+  DATA=await r.json(); LABELS=DATA.model_labels;
+  document.getElementById('meta').textContent =
+    `generated ${DATA.generated_at} · ${Object.keys(DATA.segments).length-1} segments · ${DATA.horizon_days}-day forecast`;
+  renderSegs(); select('total');
+}
+
+function renderSegs(){
+  const box=document.getElementById('segs'); box.innerHTML='';
+  for(const [code,s] of Object.entries(DATA.segments)){
+    const d=el('div',{class:'seg'+(code==='total'?' total':''),'data-code':code},[
+      el('span',{class:'code'},code==='total'?'TOTAL':code),
+      el('span',{class:'vol'},Math.round(s.avg_daily_history)+'/d')
+    ]);
+    d.onclick=()=>select(code); box.appendChild(d);
+  }
+}
+
+function select(code){
+  CUR=code; HIDDEN={};
+  document.querySelectorAll('.seg').forEach(x=>x.classList.toggle('active',x.dataset.code===code));
+  const s=DATA.segments[code];
+  const best=s.best_model, bm=s.metrics[best]||{};
+  const main=document.getElementById('main'); main.innerHTML='';
+  main.appendChild(el('h2',{},code==='total'?'TOTAL (all segments)':code));
+  main.appendChild(el('div',{class:'sub'},`avg ${s.avg_daily_history}/day · best method: `,));
+  main.lastChild.appendChild(el('span',{class:'badge'},LABELS[best]));
+
+  const cards=el('div',{class:'cards'});
+  const mk=(k,v)=>el('div',{class:'card'},[el('div',{class:'k'},k),el('div',{class:'v',html:v})]);
+  cards.appendChild(mk('Best WAPE',(bm['WAPE_%']??'–')+'<small>%</small>'));
+  cards.appendChild(mk('Best MAPE',(bm['MAPE_%']??'–')+'<small>%</small>'));
+  cards.appendChild(mk('Best MAE',(bm['MAE']??'–')));
+  const fc=s.forecast, favg=Math.round(fc.mean.reduce((a,b)=>a+b,0)/fc.mean.length);
+  cards.appendChild(mk('Forecast avg',favg+'<small>/day</small>'));
+  main.appendChild(cards);
+
+  // ---- test table ----
+  const tp=el('div',{class:'panel'});
+  tp.appendChild(el('h3',{},`Test-set accuracy — 8 methods · last ${s.backtest.dates.length} days`));
+  tp.appendChild(buildTable(s,best));
+  main.appendChild(tp);
+
+  // ---- test chart ----
+  const cp=el('div',{class:'panel'});
+  cp.appendChild(el('h3',{},'Test window — actual vs each method'));
+  const chartHost=el('div',{}); cp.appendChild(chartHost);
+  cp.appendChild(buildLegend(s,()=>chartHost.replaceChildren(testChart(s))));
+  chartHost.appendChild(testChart(s));
+  main.appendChild(cp);
+
+  // ---- forecast chart ----
+  const fp=el('div',{class:'panel'});
+  fp.appendChild(el('h3',{},`History + ${DATA.horizon_days}-day forecast (80% interval)`));
+  fp.appendChild(forecastChart(s));
+  main.appendChild(fp);
+}
+
+function buildTable(s,best){
+  const rows=Object.keys(s.metrics);
+  const cols=[['WAPE_%','WAPE %'],['MAPE_%','MAPE %'],['MAE','MAE'],['RMSE','RMSE']];
+  const t=el('table');
+  const head=el('tr',{},[el('th',{},'Method'),...cols.map(c=>el('th',{},c[1]))]);
+  t.appendChild(head);
+  // sort by WAPE asc
+  rows.sort((a,b)=>(s.metrics[a]['WAPE_%']??1e9)-(s.metrics[b]['WAPE_%']??1e9));
+  rows.forEach((m,i)=>{
+    const mm=s.metrics[m];
+    const tr=el('tr',m===best?{class:'best'}:{});
+    const c=cvar('--'+MCOL[Object.keys(s.metrics).indexOf(m)].slice(2));
+    tr.appendChild(el('td',{},[el('span',{class:'dot',style:`background:${c}`}),
+      LABELS[m]+(m===best?'  ★':'')]));
+    cols.forEach(cc=>tr.appendChild(el('td',{}, mm[cc[0]]==null?'–':String(mm[cc[0]]))));
+    t.appendChild(tr);
+  });
+  return t;
+}
+
+function buildLegend(s,redraw){
+  const lg=el('div',{class:'legend'});
+  Object.keys(s.metrics).forEach((m,i)=>{
+    const c=cvar(MCOL[i]);
+    const cb=el('input',{type:'checkbox'}); cb.checked=!HIDDEN[m];
+    cb.onchange=()=>{HIDDEN[m]=!cb.checked;redraw();};
+    lg.appendChild(el('label',{},[cb,el('span',{class:'dot',style:`background:${c}`}),LABELS[m]]));
+  });
+  return lg;
+}
+
+// ---------- SVG line-chart helpers ----------
+function scaffold(W,H,pad,xN,yMin,yMax,xLabels){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const X=i=>pad.l+(xN<=1?0:i/(xN-1))*(W-pad.l-pad.r);
+  const Y=v=>H-pad.b-((v-yMin)/((yMax-yMin)||1))*(H-pad.t-pad.b);
+  const ns='http://www.w3.org/2000/svg';
+  for(let g=0;g<=4;g++){const v=yMin+(yMax-yMin)*g/4,y=Y(v);
+    const l=document.createElementNS(ns,'line');
+    l.setAttribute('x1',pad.l);l.setAttribute('x2',W-pad.r);l.setAttribute('y1',y);l.setAttribute('y2',y);
+    l.setAttribute('class','grid');svg.appendChild(l);
+    const tx=document.createElementNS(ns,'text');tx.setAttribute('x',pad.l-6);tx.setAttribute('y',y+3);
+    tx.setAttribute('text-anchor','end');tx.setAttribute('class','tick');
+    tx.textContent=Math.round(v);svg.appendChild(tx);}
+  (xLabels||[]).forEach(([i,txt])=>{const x=X(i);
+    const tx=document.createElementNS(ns,'text');tx.setAttribute('x',x);tx.setAttribute('y',H-pad.b+14);
+    tx.setAttribute('text-anchor','middle');tx.setAttribute('class','tick');tx.textContent=txt;svg.appendChild(tx);});
+  return {svg,X,Y,ns};
+}
+function polyline(svg,ns,pts,color,w=1.8,dash){
+  const p=document.createElementNS(ns,'polyline');
+  p.setAttribute('points',pts.map(d=>d.join(',')).join(' '));
+  p.setAttribute('fill','none');p.setAttribute('stroke',color);p.setAttribute('stroke-width',w);
+  if(dash)p.setAttribute('stroke-dasharray',dash);svg.appendChild(p);
+}
+
+function testChart(s){
+  const bt=s.backtest, n=bt.dates.length;
+  let vals=[...bt.actual];
+  Object.entries(bt.predictions).forEach(([m,a])=>{if(!HIDDEN[m])vals=vals.concat(a);});
+  const yMax=Math.max(...vals,1)*1.08, yMin=Math.min(0,...vals);
+  const W=880,H=320,pad={l:44,r:12,t:12,b:26};
+  const xl=[]; for(let i=0;i<n;i+=Math.ceil(n/6))xl.push([i,bt.dates[i].slice(5)]);
+  const {svg,X,Y,ns}=scaffold(W,H,pad,n,yMin,yMax,xl);
+  Object.keys(s.metrics).forEach((m,i)=>{if(HIDDEN[m]||!bt.predictions[m])return;
+    polyline(svg,ns,bt.predictions[m].map((v,j)=>[X(j),Y(v)]),cvar(MCOL[i]),1.6);});
+  polyline(svg,ns,bt.actual.map((v,j)=>[X(j),Y(v)]),cvar('--ink'),2.6);
+  return svg;
+}
+
+function forecastChart(s){
+  const h=s.history, f=s.forecast;
+  const n=h.dates.length+f.dates.length;
+  const allv=h.values.concat(f.mean,f.upper);
+  const yMax=Math.max(...allv,1)*1.08, yMin=Math.min(0,...allv);
+  const W=880,H=320,pad={l:44,r:12,t:12,b:26};
+  const dates=h.dates.concat(f.dates);
+  const xl=[]; for(let i=0;i<n;i+=Math.ceil(n/7))xl.push([i,dates[i].slice(5)]);
+  const {svg,X,Y,ns}=scaffold(W,H,pad,n,yMin,yMax,xl);
+  // CI band
+  const off=h.values.length;
+  const band=f.upper.map((v,j)=>[X(off+j),Y(v)]).concat(
+             f.lower.map((v,j)=>[X(off+j),Y(v)]).reverse());
+  const poly=document.createElementNS(ns,'polygon');
+  poly.setAttribute('points',band.map(d=>d.join(',')).join(' '));
+  poly.setAttribute('fill',cvar('--accent'));poly.setAttribute('opacity','.15');svg.appendChild(poly);
+  polyline(svg,ns,h.values.map((v,j)=>[X(j),Y(v)]),cvar('--ink'),2);
+  // connector + forecast
+  const fc=[[X(off-1),Y(h.values[off-1])]].concat(f.mean.map((v,j)=>[X(off+j),Y(v)]));
+  polyline(svg,ns,fc,cvar('--accent'),2.4);
+  return svg;
+}
+
+document.getElementById('retrainBtn').onclick=async(e)=>{
+  const b=e.target; b.disabled=true; b.textContent='Retraining…';
+  try{const r=await fetch('/api/retrain',{method:'POST'});
+    if(!r.ok)throw 0; await load();}catch{alert('Retrain failed');}
+  b.disabled=false; b.textContent='Retrain now';
+};
+load();
+</script>
+</body>
+</html>

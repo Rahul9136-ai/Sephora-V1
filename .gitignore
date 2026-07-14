@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+outputs/run.log
+Ss.xlsx
+*.xlsx
