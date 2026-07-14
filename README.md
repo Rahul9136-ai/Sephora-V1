@@ -74,6 +74,39 @@ shipped forecast is never worse than the naive baseline):
 7. **Linear Regression** — day-of-week one-hot + linear trend
 8. **Gradient Boosting** — same calendar features, boosted trees
 
+## Evaluation — test-set MAPE % by segment
+
+Back-test on the last **28 days** (hold-out). Lower is better; the **bold** cell
+is the best (lowest MAPE) method for that segment. `–` = the method could not be
+fit for that series (too few points on a launched queue).
+
+| Segment | avg/day | SNaive | SN+Drift | MA-dow | Holt-W | SARIMA | Theta | LinReg | GBoost |
+|---------|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| **total**   | 6695 | 12.4 | 14.2 | 24.8 | 18.0 | **12.3** | 25.1 | 60.9 | 21.7 |
+| US-CH-EN | 2875 | 29.2 | **23.2** | 57.3 | 31.9 | 27.8 | 34.9 | 69.8 | 34.2 |
+| US-PH-EN | 1917 | 17.5 | 21.8 | 17.1 | 14.4 | **13.8** | 15.0 | 25.5 | 21.8 |
+| CA-CH-EN | 1057 | 23.5 | 66.6 | **18.1** | 40.6 | 46.2 | 37.5 | 22.8 | 26.4 |
+| CA-PH-EN | 465 | 24.7 | 53.8 | **17.6** | 30.4 | 32.6 | 25.4 | 18.6 | 24.6 |
+| US-EM-EN | 226 | 32.7 | 50.9 | 21.6 | **19.4** | 23.2 | 19.6 | 41.0 | 19.7 |
+| US-PH-SP | 92 | 17.0 | 16.6 | 17.2 | 13.6 | 13.8 | **12.4** | 17.6 | 14.9 |
+| CA-PH-FR | 50 | 27.6 | 57.1 | 21.1 | **19.0** | 19.8 | 19.5 | 28.2 | 20.7 |
+| CA-EM-EN | 9 | 39.7 | 80.7 | **36.7** | 44.4 | 51.3 | 47.0 | 39.3 | 54.9 |
+| CA-CH-FR | 2 | 49.0 | **25.9** | 74.5 | 42.4 | 28.9 | 62.1 | 38.9 | 66.2 |
+| CA-EM-FR | 1 | 48.1 | 98.7 | 49.2 | 48.6 | 37.7 | **29.1** | 37.8 | 32.1 |
+
+Best MAPE per segment, at a glance:
+
+![Best-method MAPE by segment](outputs/mape_by_segment.png)
+
+Raw vs cleaned vs 30-day forecast for the total and all 10 segments (April promo
+window shaded):
+
+![Forecast plot](outputs/forecast_plot.png)
+
+> The two micro-queues (CA-CH-FR, CA-EM-FR at ~1–2 contacts/day) show higher MAPE
+> by nature — a ±1 contact error on a ~1/day mean is a large percentage even
+> though the absolute error is tiny.
+
 ## Web UI
 
 A Flask dashboard to explore the results:
