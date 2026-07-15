@@ -461,18 +461,53 @@ def _predict_prophet(train, steps, xtr=None, xfu=None):
     return np.asarray(m.predict(fut)["yhat"].values)
 
 
-# 9 methods compared on the test set (labels shown in the UI)
+def _auto_log(base_fn):
+    """Wrap a model so it fits on either the raw or the log1p series — whichever
+    scores better on a short internal validation slice (no test leakage). Log
+    fitting stabilizes variance and often lowers MAPE for proportional volume."""
+    def g(train, steps, xtr=None, xfu=None):
+        vh = min(2 * SEASON, max(SEASON, steps))
+        use_log = False
+        if len(train) > vh + 3 * SEASON:
+            itr, iva = train.iloc[:-vh], train.iloc[-vh:]
+            ixtr = xtr.iloc[:-vh] if xtr is not None else None
+            ixva = xtr.iloc[-vh:] if xtr is not None else None
+            a = iva.values
+            mask = a >= 1
+
+            def sc(pred):
+                p = np.clip(np.asarray(pred, float), 0, None)
+                return np.mean(np.abs((a[mask] - p[mask]) / a[mask])) if mask.any() else np.inf
+            try:
+                lin = sc(base_fn(itr, vh, ixtr, ixva))
+            except Exception:
+                lin = np.inf
+            try:
+                llog = pd.Series(np.log1p(np.clip(itr.values, 0, None)), index=itr.index)
+                lg = sc(np.expm1(base_fn(llog, vh, ixtr, ixva)))
+            except Exception:
+                lg = np.inf
+            use_log = lg < lin
+        if use_log:
+            lt = pd.Series(np.log1p(np.clip(train.values, 0, None)), index=train.index)
+            return np.expm1(base_fn(lt, steps, xtr, xfu))
+        return base_fn(train, steps, xtr, xfu)
+    return g
+
+
+# 9 base methods + a top-3 ensemble; selection minimizes hold-out MAPE.
 MODELS = {
     "seasonal_naive": _predict_seasonal_naive,
     "snaive_drift": _predict_snaive_drift,
     "moving_avg_dow": _predict_moving_avg,
-    "holt_winters": _predict_holtwinters,
-    "sarimax": _predict_sarimax,
-    "theta": _predict_theta,
+    "holt_winters": _auto_log(_predict_holtwinters),
+    "sarimax": _auto_log(_predict_sarimax),
+    "theta": _auto_log(_predict_theta),
     "linreg_calendar": _predict_linreg,
     "gbr_calendar": _predict_gbr,
     "prophet": _predict_prophet,
 }
+ENSEMBLE = "ensemble"           # mean of the top-3 base methods (per segment)
 
 MODEL_LABELS = {
     "seasonal_naive": "Seasonal Naive",
@@ -484,7 +519,17 @@ MODEL_LABELS = {
     "linreg_calendar": "Linear Regression",
     "gbr_calendar": "Gradient Boosting",
     "prophet": "Prophet",
+    ENSEMBLE: "Ensemble",
 }
+
+
+def _score(m: dict) -> float:
+    """Ranking score = MAPE (the metric we minimize); WAPE fallback for
+    near-zero series where MAPE is undefined."""
+    v = m.get("MAPE_%")
+    if v is None:
+        v = m.get("WAPE_%")
+    return v if isinstance(v, (int, float)) else float("inf")
 
 
 def _exog_df(orders_full, index):
@@ -496,12 +541,13 @@ def _exog_df(orders_full, index):
 
 
 def evaluate(clean: pd.Series, sparse: bool = False, orders_full=None):
-    """Backtest ALL 8 methods on the last TEST_DAYS and return per-model metrics
-    + predictions and the winner (lowest WAPE).
+    """Backtest all base methods + a top-3 ensemble on the last TEST_DAYS and
+    return per-model metrics + predictions, the winner (lowest MAPE), and the
+    ensemble members.
 
-    All 8 are always scored so the leaderboard is fully populated; a method that
-    can't fit (too few points on a launched queue) is recorded with an error.
-    For the FORWARD forecast, however, thin queues are pinned to seasonal-naive
+    All methods are always scored so the leaderboard is fully populated; a method
+    that can't fit (too few points on a launched queue) is recorded with an error.
+    For the FORWARD forecast, thin queues are pinned to seasonal-naive
     (`safe_best`) so trend/drift models can't extrapolate absurd values.
     `orders_full` (optional) feeds SARIMA + the regressions as an exog driver."""
     # short (recently launched) series -> shrink the holdout
@@ -512,40 +558,64 @@ def evaluate(clean: pd.Series, sparse: bool = False, orders_full=None):
     train, test = clean.iloc[:-test_days], clean.iloc[-test_days:]
     xtr, xte = _exog_df(orders_full, train.index), _exog_df(orders_full, test.index)
     results, preds = {}, {}
-    for name, fn in MODELS.items():                 # always try all 8
+    for name, fn in MODELS.items():                 # always try all base methods
         try:
             pred = np.clip(fn(train, len(test), xtr, xte), 0, None)
             results[name] = metrics(test, pred)
             preds[name] = np.round(pred, 1).tolist()
         except Exception as e:
-            results[name] = {"error": str(e)[:100], "WAPE_%": None}
+            results[name] = {"error": str(e)[:100], "MAPE_%": None, "WAPE_%": None}
 
-    def _wape(k):
-        w = results[k].get("WAPE_%")
-        return w if isinstance(w, (int, float)) else float("inf")
-    ranked_best = min(results, key=_wape)            # most accurate on the test
+    # ensemble = mean of the top-2 or top-3 base methods (whichever scores
+    # lower on the hold-out); forecast combination usually lowers error
+    ranked = sorted(list(preds), key=lambda k: _score(results[k]))
+    members = ranked[:3]
+    best_ens = None
+    for k in (2, 3):
+        if len(ranked) >= k:
+            mem = ranked[:k]
+            p = np.mean([np.asarray(preds[m], float) for m in mem], axis=0)
+            met = metrics(test, p)
+            if best_ens is None or _score(met) < _score(best_ens[1]):
+                best_ens = (p, met, mem)
+    if best_ens is not None:
+        results[ENSEMBLE] = best_ens[1]
+        preds[ENSEMBLE] = np.round(best_ens[0], 1).tolist()
+        members = best_ens[2]
+
+    ranked_best = min(results, key=lambda k: _score(results[k]))  # min MAPE
     # safety: pin thin queues to seasonal_naive for the forward forecast
     safe_best = "seasonal_naive" if sparse else ranked_best
     backtest = {"dates": [d.strftime("%Y-%m-%d") for d in test.index],
                 "actual": np.round(test.values, 1).tolist(),
                 "predictions": preds}
-    return results, safe_best, ranked_best, backtest
+    return results, safe_best, ranked_best, backtest, members
 
 
 # =========================================================================
 # 5. FORECAST FUTURE (using the winning model, with an interval)
 # =========================================================================
 def forecast_future(clean: pd.Series, horizon: int, model_name: str,
-                    orders_full=None, events=None) -> pd.DataFrame:
+                    orders_full=None, events=None, members=None) -> pd.DataFrame:
     """Refit the winning model on ALL cleaned data and project `horizon` days
     ahead. Orders feed the model as an exog driver; known future events lift the
-    forecast within their windows. The interval comes from weekly residuals."""
+    forecast within their windows. The interval comes from weekly residuals.
+    For the ensemble, the forward forecast is the mean of `members`' forecasts."""
     idx = pd.date_range(clean.index[-1] + pd.Timedelta(days=1),
                         periods=horizon, freq="D")
     xtr, xfu = _exog_df(orders_full, clean.index), _exog_df(orders_full, idx)
-    fn = MODELS.get(model_name, _predict_seasonal_naive)
     try:
-        mean = np.clip(fn(clean, horizon, xtr, xfu), 0, None)
+        if model_name == ENSEMBLE and members:
+            parts = []
+            for mname in members:
+                try:
+                    parts.append(np.clip(MODELS[mname](clean, horizon, xtr, xfu), 0, None))
+                except Exception:
+                    continue
+            mean = np.mean(parts, axis=0) if parts else _predict_seasonal_naive(clean, horizon)
+        else:
+            mean = MODELS.get(model_name, _predict_seasonal_naive)(clean, horizon, xtr, xfu)
+        mean = np.clip(mean, 0, None)
     except Exception:
         mean = np.clip(_predict_seasonal_naive(clean, horizon), 0, None)
 
@@ -628,13 +698,13 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
         all_clean[col] = clean
 
         sparse = float(daily[col].mean()) < 5      # micro-queue guard
-        print(f"[3/5] {col}: back-testing 8 methods on the test set ...")
-        ev, best, test_winner, backtest = evaluate(clean, sparse=sparse,
-                                                   orders_full=orders_full)
+        print(f"[3/5] {col}: back-testing methods on the test set ...")
+        ev, best, test_winner, backtest, members = evaluate(
+            clean, sparse=sparse, orders_full=orders_full)
 
         print(f"[4/5] {col}: forecasting next {horizon} days with '{best}' ...")
-        fc = forecast_future(clean, horizon, best,
-                             orders_full=orders_full, events=events)
+        fc = forecast_future(clean, horizon, best, orders_full=orders_full,
+                             events=events, members=members)
         fc.to_csv(os.path.join(OUT_DIR, f"forecast_{col}.csv"))
         all_forecast[col] = fc
 
@@ -647,6 +717,8 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
             "forecast_model": best,
             "test_winner": test_winner,
             "test_winner_WAPE_%": ev[test_winner].get("WAPE_%"),
+            "test_winner_MAPE_%": ev[test_winner].get("MAPE_%"),
+            "ensemble_members": members,
             "all_model_metrics": ev,
             "forecast_mean_daily": round(float(fc["forecast"].mean()), 0),
         }
@@ -656,6 +728,7 @@ def run(xlsx_path: str, horizon: int, make_plot: bool = True) -> dict:
             "avg_daily_history": round(float(daily[col].mean()), 1),
             "forecast_model": best,
             "test_winner": test_winner,
+            "ensemble_members": members,
             "metrics": ev,
             "history": {"dates": [d.strftime("%Y-%m-%d") for d in hist.index],
                         "values": np.round(hist.values, 1).tolist()},

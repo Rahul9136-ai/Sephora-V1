@@ -9,7 +9,7 @@
     --bg:#0e0e12; --panel:#17171d; --panel2:#1e1e26; --line:#2a2a34;
     --ink:#f3f3f6; --muted:#9a9aa8; --accent:#e0006c; --good:#25c281;
     --c0:#e0006c;--c1:#3b82f6;--c2:#f59e0b;--c3:#10b981;--c4:#a855f7;
-    --c5:#ef4444;--c6:#14b8a6;--c7:#eab308;--c8:#8b5cf6;
+    --c5:#ef4444;--c6:#14b8a6;--c7:#eab308;--c8:#8b5cf6;--c9:#f472b6;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -122,7 +122,7 @@
 <div class="tip" id="tip"></div>
 
 <script>
-const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7','--c8'];
+const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7','--c8','--c9'];
 let DATA=null, LABELS=null, CUR=null, HIDDEN={}, VIEW='detail';
 
 function cvar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
@@ -169,15 +169,17 @@ function select(code){
   const main=document.getElementById('main'); main.innerHTML='';
   main.appendChild(tabbar('detail'));
   main.appendChild(el('h2',{},code==='total'?'TOTAL (all segments)':code));
-  main.appendChild(el('div',{class:'sub'},`avg ${s.avg_daily_history}/day · best test method: `,));
+  main.appendChild(el('div',{class:'sub'},`avg ${s.avg_daily_history}/day · lowest-MAPE method: `,));
   main.lastChild.appendChild(el('span',{class:'badge'},LABELS[best]));
+  if(best==='ensemble' && s.ensemble_members)
+    main.lastChild.appendChild(el('span',{class:'badge alt'},'= '+s.ensemble_members.map(m=>LABELS[m]).join(' + ')));
   if(s.forecast_model!==best)
     main.lastChild.appendChild(el('span',{class:'badge alt'},'forecast uses: '+LABELS[s.forecast_model]));
 
   const cards=el('div',{class:'cards'});
   const mk=(k,v)=>el('div',{class:'card'},[el('div',{class:'k'},k),el('div',{class:'v',html:v})]);
-  cards.appendChild(mk('Best WAPE',(bm['WAPE_%']??'–')+'<small>%</small>'));
   cards.appendChild(mk('Best MAPE',(bm['MAPE_%']??'–')+'<small>%</small>'));
+  cards.appendChild(mk('Best WAPE',(bm['WAPE_%']??'–')+'<small>%</small>'));
   cards.appendChild(mk('Best MAE',(bm['MAE']??'–')));
   const fc=s.forecast, favg=Math.round(fc.mean.reduce((a,b)=>a+b,0)/fc.mean.length);
   cards.appendChild(mk('Forecast avg',favg+'<small>/day</small>'));
