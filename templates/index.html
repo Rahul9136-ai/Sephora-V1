@@ -9,7 +9,7 @@
     --bg:#0e0e12; --panel:#17171d; --panel2:#1e1e26; --line:#2a2a34;
     --ink:#f3f3f6; --muted:#9a9aa8; --accent:#e0006c; --good:#25c281;
     --c0:#e0006c;--c1:#3b82f6;--c2:#f59e0b;--c3:#10b981;--c4:#a855f7;
-    --c5:#ef4444;--c6:#14b8a6;--c7:#eab308;
+    --c5:#ef4444;--c6:#14b8a6;--c7:#eab308;--c8:#8b5cf6;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -122,7 +122,7 @@
 <div class="tip" id="tip"></div>
 
 <script>
-const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
+const MCOL = ['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7','--c8'];
 let DATA=null, LABELS=null, CUR=null, HIDDEN={}, VIEW='detail';
 
 function cvar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
@@ -185,7 +185,7 @@ function select(code){
 
   // ---- test table ----
   const tp=el('div',{class:'panel'});
-  tp.appendChild(el('h3',{},`Test-set accuracy — 8 methods · last ${s.backtest.dates.length} days`));
+  tp.appendChild(el('h3',{},`Test-set accuracy — ${Object.keys(DATA.model_labels).length} methods · last ${s.backtest.dates.length} days`));
   tp.appendChild(buildTable(s,best));
   main.appendChild(tp);
 
@@ -310,7 +310,7 @@ function showBoard(){
   const segs=Object.entries(DATA.segments);
   const main=document.getElementById('main'); main.innerHTML='';
   main.appendChild(tabbar('board'));
-  main.appendChild(el('h2',{},'Leaderboard — all 8 methods × every segment'));
+  main.appendChild(el('h2',{},`Leaderboard — all ${Object.keys(DATA.model_labels).length} methods × every segment`));
   main.appendChild(el('div',{class:'sub'},'Test-set WAPE % (lower is better). Best method per segment is highlighted; “–” = method could not fit that series.'));
 
   // win tally (segments only, excl. total)

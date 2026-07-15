@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-15T00:12:04",
+  "generated_at": "2026-07-15T21:24:47",
   "source": "C:\\Users\\lenovo\\Desktop\\Ss.xlsx",
   "history_days": 309,
   "history_start": "2025-08-19",
@@ -34,7 +34,8 @@
     "sarimax": "SARIMA",
     "theta": "Theta",
     "linreg_calendar": "Linear Regression",
-    "gbr_calendar": "Gradient Boosting"
+    "gbr_calendar": "Gradient Boosting",
+    "prophet": "Prophet"
   },
   "segments": {
     "total": {
@@ -92,6 +93,12 @@
           "RMSE": 1128.6,
           "WAPE_%": 20.39,
           "MAPE_%": 21.7
+        },
+        "prophet": {
+          "MAE": 1464.7,
+          "RMSE": 1564.5,
+          "WAPE_%": 28.8,
+          "MAPE_%": 31.0
         }
       },
       "forecast_mean_daily": 4692.0
@@ -151,6 +158,12 @@
           "RMSE": 648.9,
           "WAPE_%": 29.12,
           "MAPE_%": 34.23
+        },
+        "prophet": {
+          "MAE": 970.6,
+          "RMSE": 1064.1,
+          "WAPE_%": 52.46,
+          "MAPE_%": 62.13
         }
       },
       "forecast_mean_daily": 344.0
@@ -210,6 +223,12 @@
           "RMSE": 335.0,
           "WAPE_%": 19.73,
           "MAPE_%": 21.78
+        },
+        "prophet": {
+          "MAE": 211.5,
+          "RMSE": 255.0,
+          "WAPE_%": 13.98,
+          "MAPE_%": 14.13
         }
       },
       "forecast_mean_daily": 2045.0
@@ -218,9 +237,9 @@
       "avg_daily_history": 1057.0,
       "outliers_normalized": 17,
       "april_days_capped": 15,
-      "forecast_model": "moving_avg_dow",
-      "test_winner": "moving_avg_dow",
-      "test_winner_WAPE_%": 17.11,
+      "forecast_model": "prophet",
+      "test_winner": "prophet",
+      "test_winner_WAPE_%": 16.55,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 180.6,
@@ -269,9 +288,15 @@
           "RMSE": 218.4,
           "WAPE_%": 24.3,
           "MAPE_%": 26.42
+        },
+        "prophet": {
+          "MAE": 131.5,
+          "RMSE": 155.4,
+          "WAPE_%": 16.55,
+          "MAPE_%": 17.92
         }
       },
-      "forecast_mean_daily": 832.0
+      "forecast_mean_daily": 758.0
     },
     "CA-PH-EN": {
       "avg_daily_history": 465.3,
@@ -328,6 +353,12 @@
           "RMSE": 85.2,
           "WAPE_%": 20.73,
           "MAPE_%": 24.56
+        },
+        "prophet": {
+          "MAE": 61.7,
+          "RMSE": 73.5,
+          "WAPE_%": 17.78,
+          "MAPE_%": 17.95
         }
       },
       "forecast_mean_daily": 363.0
@@ -387,6 +418,12 @@
           "RMSE": 79.1,
           "WAPE_%": 17.94,
           "MAPE_%": 19.67
+        },
+        "prophet": {
+          "MAE": 114.3,
+          "RMSE": 135.5,
+          "WAPE_%": 30.39,
+          "MAPE_%": 36.23
         }
       },
       "forecast_mean_daily": 411.0
@@ -446,6 +483,12 @@
           "RMSE": 13.4,
           "WAPE_%": 14.17,
           "MAPE_%": 14.88
+        },
+        "prophet": {
+          "MAE": 11.5,
+          "RMSE": 14.0,
+          "WAPE_%": 14.15,
+          "MAPE_%": 14.78
         }
       },
       "forecast_mean_daily": 98.0
@@ -454,9 +497,9 @@
       "avg_daily_history": 50.4,
       "outliers_normalized": 10,
       "april_days_capped": 13,
-      "forecast_model": "theta",
-      "test_winner": "theta",
-      "test_winner_WAPE_%": 15.8,
+      "forecast_model": "prophet",
+      "test_winner": "prophet",
+      "test_winner_WAPE_%": 15.76,
       "all_model_metrics": {
         "seasonal_naive": {
           "MAE": 10.2,
@@ -505,9 +548,15 @@
           "RMSE": 8.7,
           "WAPE_%": 18.0,
           "MAPE_%": 20.73
+        },
+        "prophet": {
+          "MAE": 6.2,
+          "RMSE": 7.3,
+          "WAPE_%": 15.76,
+          "MAPE_%": 17.2
         }
       },
-      "forecast_mean_daily": 39.0
+      "forecast_mean_daily": 34.0
     },
     "CA-EM-EN": {
       "avg_daily_history": 8.9,
@@ -564,6 +613,12 @@
           "RMSE": 13.4,
           "WAPE_%": 38.57,
           "MAPE_%": 54.9
+        },
+        "prophet": {
+          "MAE": 9.8,
+          "RMSE": 11.5,
+          "WAPE_%": 32.24,
+          "MAPE_%": 45.82
         }
       },
       "forecast_mean_daily": 32.0
@@ -623,6 +678,12 @@
           "RMSE": 29.6,
           "WAPE_%": 66.73,
           "MAPE_%": 66.18
+        },
+        "prophet": {
+          "MAE": 12.9,
+          "RMSE": 14.6,
+          "WAPE_%": 31.99,
+          "MAPE_%": 38.84
         }
       },
       "forecast_mean_daily": 42.0
@@ -682,6 +743,12 @@
           "RMSE": 1.1,
           "WAPE_%": 82.77,
           "MAPE_%": 32.14
+        },
+        "prophet": {
+          "MAE": 0.9,
+          "RMSE": 1.1,
+          "WAPE_%": 86.06,
+          "MAPE_%": 39.2
         }
       },
       "forecast_mean_daily": 1.0

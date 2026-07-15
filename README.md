@@ -26,7 +26,7 @@ e.g. `US-EN`, `US-SP`, `CA-FR`). The aggregate country=`ALL` chat bucket is
    then imputes missing calendar days (e.g. the 2025-12-25 Christmas gap) using
    the same-weekday local median so weekly seasonality is preserved.
 3. **Normalize outliers (April-aware)** — see below.
-4. **Back-test & select model** — holds out the last 28 days, back-tests eight
+4. **Back-test & select model** — holds out the last 28 days, back-tests nine
    candidate models, and keeps the most accurate one *per segment* (by WAPE).
 5. **Forecast** — refits the winner on all cleaned data (with orders + event
    drivers) and projects the next 90 days (3 months) with an 80% interval.
@@ -59,9 +59,9 @@ All decisions are logged per day in `outputs/cleaning_<channel>.csv`
 Tune in `forecast_pipeline.py`: `Z_THRESH`, `REL_THRESH`, `APRIL_CAP`,
 `APRIL_MONTHS`, `EVENT_WINDOWS`.
 
-## Models — 8 methods compared on the test set
+## Models — 9 methods compared on the test set
 
-Every segment is back-tested with **8 forecasting methods**; the one with the
+Every segment is back-tested with **9 forecasting methods**; the one with the
 lowest hold-out WAPE wins and is used for the future forecast (guaranteeing the
 shipped forecast is never worse than the naive baseline):
 
@@ -73,6 +73,7 @@ shipped forecast is never worse than the naive baseline):
 6. **Theta** — statsmodels ThetaModel
 7. **Linear Regression** — day-of-week one-hot + linear trend
 8. **Gradient Boosting** — same calendar features, boosted trees
+9. **Prophet** — Facebook Prophet, weekly seasonality (+ orders as a regressor)
 
 ## Evaluation — test-set MAPE % by segment
 
@@ -80,19 +81,19 @@ Back-test on the last **28 days** (hold-out). Lower is better; the **bold** cell
 is the best (lowest MAPE) method for that segment. `–` = the method could not be
 fit for that series (too few points on a launched queue).
 
-| Segment | avg/day | SNaive | SN+Drift | MA-dow | Holt-W | SARIMA | Theta | LinReg | GBoost |
-|---------|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| **total**   | 6695 | 12.4 | 14.2 | 24.8 | 18.0 | **12.3** | 25.1 | 60.9 | 21.7 |
-| US-CH-EN | 2875 | 29.2 | **23.2** | 57.3 | 31.9 | 27.8 | 34.9 | 69.8 | 34.2 |
-| US-PH-EN | 1917 | 17.5 | 21.8 | 17.1 | 14.4 | **13.8** | 15.0 | 25.5 | 21.8 |
-| CA-CH-EN | 1057 | 23.5 | 66.6 | **18.1** | 40.6 | 46.2 | 37.5 | 22.8 | 26.4 |
-| CA-PH-EN | 465 | 24.7 | 53.8 | **17.6** | 30.4 | 32.6 | 25.4 | 18.6 | 24.6 |
-| US-EM-EN | 226 | 32.7 | 50.9 | 21.6 | **19.4** | 23.2 | 19.6 | 41.0 | 19.7 |
-| US-PH-SP | 92 | 17.0 | 16.6 | 17.2 | 13.6 | 13.8 | **12.4** | 17.6 | 14.9 |
-| CA-PH-FR | 50 | 27.6 | 57.1 | 21.1 | **19.0** | 19.8 | 19.5 | 28.2 | 20.7 |
-| CA-EM-EN | 9 | 39.7 | 80.7 | **36.7** | 44.4 | 51.3 | 47.0 | 39.3 | 54.9 |
-| CA-CH-FR | 2 | 49.0 | **25.9** | 74.5 | 42.4 | 28.9 | 62.1 | 38.9 | 66.2 |
-| CA-EM-FR | 1 | 48.1 | 98.7 | 49.2 | 48.6 | 37.7 | **29.1** | 37.8 | 32.1 |
+| Segment | avg/day | SNaive | SN+Drift | MA-dow | Holt-W | SARIMA | Theta | LinReg | GBoost | Prophet |
+|---------|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| **total** | 6695 | 12.4 | 14.2 | 24.8 | 18.0 | **12.3** | 25.1 | 60.9 | 21.7 | 31.0 |
+| US-CH-EN | 2875 | 29.2 | **23.2** | 57.3 | 31.9 | 27.8 | 34.9 | 69.8 | 34.2 | 62.1 |
+| US-PH-EN | 1916 | 17.5 | 21.8 | 17.1 | 14.4 | **13.8** | 15.0 | 25.5 | 21.8 | 14.1 |
+| CA-CH-EN | 1057 | 23.5 | 66.6 | 18.1 | 40.6 | 46.2 | 37.5 | 22.8 | 26.4 | **17.9** |
+| CA-PH-EN | 465 | 24.7 | 53.8 | **17.6** | 30.4 | 32.6 | 25.4 | 18.6 | 24.6 | 17.9 |
+| US-EM-EN | 225 | 32.7 | 50.9 | 21.6 | **19.4** | 23.2 | 19.6 | 41.0 | 19.7 | 36.2 |
+| US-PH-SP | 92 | 17.0 | 16.6 | 17.2 | 13.6 | 13.8 | **12.4** | 17.6 | 14.9 | 14.8 |
+| CA-PH-FR | 50 | 27.6 | 57.1 | 21.1 | 19.0 | 19.8 | 19.5 | 28.2 | 20.7 | **17.2** |
+| CA-EM-EN | 8 | 39.7 | 80.7 | **36.7** | 44.4 | 51.3 | 47.0 | 39.3 | 54.9 | 45.8 |
+| CA-CH-FR | 2 | 49.0 | **25.9** | 74.5 | 42.4 | 28.9 | 62.1 | 38.9 | 66.2 | 38.8 |
+| CA-EM-FR | 0 | 48.1 | 98.7 | 49.2 | 48.6 | 37.7 | **29.1** | 37.8 | 32.1 | 39.2 |
 
 Best MAPE per segment, at a glance:
 
@@ -115,14 +116,14 @@ A Flask dashboard to explore the results:
 python app.py            REM -> http://127.0.0.1:5056
 ```
 
-**Segment detail** tab — pick any segment to see: the 8-method **test-set
+**Segment detail** tab — pick any segment to see: the 9-method **test-set
 accuracy table** (WAPE / MAPE / MAE / RMSE, best highlighted), a **test-window
 chart** of actual vs every method (toggle methods on/off), and the **history +
 90-day (3-month) forecast** with its 80% interval.
 
 **Leaderboard** tab — a wins-per-method tally plus a full **WAPE % heat-map
-matrix** (every segment × all 8 methods, best per row in green, worse cells
-tinted red). All 8 methods are scored for *every* segment, including the thin
+matrix** (every segment × all 9 methods, best per row in green, worse cells
+tinted red). All 9 methods are scored for *every* segment, including the thin
 launched queues.
 
 **Data & Retrain** tab — add new data and produce a fresh 3-month forecast (see

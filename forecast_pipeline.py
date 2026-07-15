@@ -439,7 +439,29 @@ def _predict_gbr(train, steps, xtr=None, xfu=None):
     return _predict_regression(est)(train, steps, xtr, xfu)
 
 
-# 8 methods compared on the test set (labels shown in the UI)
+def _predict_prophet(train, steps, xtr=None, xfu=None):
+    """Facebook Prophet with weekly seasonality; orders (if provided) added as
+    an extra regressor. Yearly/daily seasonality off (<1yr of daily data)."""
+    import logging
+    for lg in ("cmdstanpy", "prophet"):
+        logging.getLogger(lg).setLevel(logging.ERROR)
+    from prophet import Prophet
+    df = pd.DataFrame({"ds": train.index, "y": np.asarray(train, float)})
+    m = Prophet(weekly_seasonality=True, yearly_seasonality=False,
+                daily_seasonality=False, interval_width=0.8)
+    if xtr is not None:
+        df["orders"] = np.asarray(xtr, float).reshape(-1)
+        m.add_regressor("orders")
+    m.fit(df)
+    fut = pd.DataFrame({"ds": pd.date_range(train.index[-1] + pd.Timedelta(days=1),
+                                            periods=steps, freq="D")})
+    if xtr is not None:
+        fut["orders"] = (np.asarray(xfu, float).reshape(-1) if xfu is not None
+                         else float(np.asarray(xtr, float).reshape(-1)[-SEASON:].mean()))
+    return np.asarray(m.predict(fut)["yhat"].values)
+
+
+# 9 methods compared on the test set (labels shown in the UI)
 MODELS = {
     "seasonal_naive": _predict_seasonal_naive,
     "snaive_drift": _predict_snaive_drift,
@@ -449,6 +471,7 @@ MODELS = {
     "theta": _predict_theta,
     "linreg_calendar": _predict_linreg,
     "gbr_calendar": _predict_gbr,
+    "prophet": _predict_prophet,
 }
 
 MODEL_LABELS = {
@@ -460,6 +483,7 @@ MODEL_LABELS = {
     "theta": "Theta",
     "linreg_calendar": "Linear Regression",
     "gbr_calendar": "Gradient Boosting",
+    "prophet": "Prophet",
 }
 
 
